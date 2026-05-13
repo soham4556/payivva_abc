@@ -2,15 +2,30 @@ import express from 'express';
 import mysql from 'mysql2/promise';
 import cors from 'cors';
 import dotenv from 'dotenv';
+import nodemailer from 'nodemailer';
 
 dotenv.config();
 
 const app = express();
 app.use(cors());
-app.use(express.json());
+
+// Diagnostic logging to see request size
+app.use((req, res, next) => {
+  if (req.method === 'POST') {
+    console.log(`[API] ${req.method} ${req.url} - Body size: ${req.headers['content-length']} bytes`);
+  }
+  next();
+});
+
+app.use(express.json({ limit: '100mb' }));
+app.use(express.urlencoded({ limit: '100mb', extended: true, parameterLimit: 100000 }));
+
+import { getProfessionalEmailTemplate } from './templates/ProfessionalEmail.js';
+import { getPurchaseOrderEmailTemplate } from './templates/PurchaseOrderEmail.js';
+import { getGSTReportEmailTemplate } from './templates/GSTReportEmail.js';
 
 // MySQL Connection Pool
-const pool = mysql.createPool({
+const pool = mysql.createPool(process.env.DATABASE_URL || {
   host: process.env.DB_HOST,
   user: process.env.DB_USER,
   password: process.env.DB_PASS,
@@ -20,8 +35,11 @@ const pool = mysql.createPool({
   queueLimit: 0
 });
 
+let isDBInitialized = false;
+
 // Initialize Database Table
 const initDB = async () => {
+  if (isDBInitialized) return;
   let connection;
   try {
     connection = await pool.getConnection();
@@ -37,6 +55,8 @@ const initDB = async () => {
         customer_name VARCHAR(255),
         grand_total DECIMAL(15, 2),
         status VARCHAR(20) DEFAULT 'pending',
+        payment_status VARCHAR(20) DEFAULT 'paid',
+        pending_amount DECIMAL(15, 2) DEFAULT 0,
         data JSON,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       )
@@ -113,9 +133,24 @@ const initDB = async () => {
 
     // Migration for invoices
     try {
-      await connection.query("ALTER TABLE invoices ADD COLUMN IF NOT EXISTS status VARCHAR(20) DEFAULT 'pending'");
-      await connection.query("ALTER TABLE invoices ADD COLUMN IF NOT EXISTS data JSON");
-    } catch (e) {}
+      const columns = await connection.query("SHOW COLUMNS FROM invoices");
+      const colNames = columns[0].map(c => c.Field);
+      
+      if (!colNames.includes('payment_status')) {
+        await connection.query("ALTER TABLE invoices ADD COLUMN payment_status VARCHAR(20) DEFAULT 'paid'");
+      }
+      if (!colNames.includes('pending_amount')) {
+        await connection.query("ALTER TABLE invoices ADD COLUMN pending_amount DECIMAL(15, 2) DEFAULT 0");
+      }
+      if (!colNames.includes('status')) {
+        await connection.query("ALTER TABLE invoices ADD COLUMN status VARCHAR(20) DEFAULT 'pending'");
+      }
+      if (!colNames.includes('data')) {
+        await connection.query("ALTER TABLE invoices ADD COLUMN data JSON");
+      }
+    } catch (e) {
+      console.error("Invoices migration error:", e);
+    }
 
     // Migration for products
     try {
@@ -161,13 +196,24 @@ const initDB = async () => {
       await connection.query("ALTER TABLE expenses ADD COLUMN IF NOT EXISTS status VARCHAR(20) DEFAULT 'active'");
     } catch (e) {}
 
-    console.log('Database initialized successfully');
+    isDBInitialized = true;
+    console.log('--- Database Initialization Complete ---');
   } catch (err) {
-    console.error('Database Initialization Failed:', err.message);
+    console.error('❌ Database Initialization Error:', err);
   } finally {
     if (connection) connection.release();
   }
 };
+
+// Global Middleware to ensure DB is ready
+app.use(async (req, res, next) => {
+  try {
+    await initDB();
+    next();
+  } catch (err) {
+    res.status(500).json({ error: "Database Initialization Failed" });
+  }
+});
 
 initDB();
 
@@ -180,13 +226,25 @@ app.get('/api/health', (req, res) => {
 app.post('/api/invoices', async (req, res) => {
   let connection;
   try {
-    const { invoiceMeta, customer, totals, items, annexures, docType } = req.body;
     connection = await pool.getConnection();
     await connection.beginTransaction();
 
+    // ON-THE-FLY MIGRATION: Ensure columns exist before saving
+    const [columns] = await connection.query("SHOW COLUMNS FROM invoices");
+    const colNames = columns.map(c => c.Field);
+    
+    if (!colNames.includes('payment_status')) {
+      await connection.query("ALTER TABLE invoices ADD COLUMN payment_status VARCHAR(20) DEFAULT 'paid'");
+    }
+    if (!colNames.includes('pending_amount')) {
+      await connection.query("ALTER TABLE invoices ADD COLUMN pending_amount DECIMAL(15, 2) DEFAULT 0");
+    }
+
+    const { invoiceMeta, customer, totals, items, annexures, docType } = req.body;
+    
     const query = `
-      INSERT INTO invoices (invoice_number, doc_type, issue_date, customer_name, grand_total, data)
-      VALUES (?, ?, ?, ?, ?, ?)
+      INSERT INTO invoices (invoice_number, doc_type, issue_date, customer_name, grand_total, payment_status, pending_amount, data)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
     `;
     
     const values = [
@@ -195,6 +253,8 @@ app.post('/api/invoices', async (req, res) => {
       invoiceMeta.issueDate,
       customer.name,
       parseFloat(totals.grandTotal),
+      req.body.payment_status || 'paid',
+      parseFloat(req.body.pending_amount) || 0,
       JSON.stringify(req.body)
     ];
 
@@ -373,6 +433,21 @@ app.put('/api/invoices/:id/status', async (req, res) => {
     res.status(500).json({ success: false, error: err.message });
   } finally {
     if (connection) connection.release();
+  }
+});
+
+// Update Payment Status (for Credit Manager)
+app.put('/api/invoices/:id/payment-status', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { payment_status, pending_amount } = req.body;
+    await pool.execute(
+      'UPDATE invoices SET payment_status = ?, pending_amount = ? WHERE id = ?',
+      [payment_status, pending_amount, id]
+    );
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
   }
 });
 
@@ -734,8 +809,11 @@ app.post('/api/system/master-reset', async (req, res) => {
       ]
     );
 
-    // 4. Clear Active Tables (BUT KEEP revenue_log persistent)
-    await connection.query('TRUNCATE TABLE invoices');
+    // 4. Clear Active Tables (BUT PRESERVE Pending Credit & Life-time Sales)
+    // We only delete invoices that are fully paid to keep Credit Manager intact
+    await connection.query('DELETE FROM invoices WHERE payment_status = "paid" AND (pending_amount IS NULL OR pending_amount <= 0)');
+    
+    // We clear POs and Expenses as they are usually operational/one-time
     await connection.query('TRUNCATE TABLE purchase_orders');
     await connection.query('TRUNCATE TABLE expenses');
     // Note: revenue_log is NOT truncated to preserve life-time sales on Dashboard
@@ -798,6 +876,103 @@ app.get('/api/revenue', async (req, res) => {
 });
 
 // For local development
+// Email Sending Endpoint
+app.post('/api/send-email', async (req, res) => {
+  const { 
+    to, 
+    invoiceData, 
+    myBusiness, 
+    pdfBase64, 
+    isPO = false, 
+    poData = {}, 
+    isGST = false, 
+    gstData = {} 
+  } = req.body;
+
+  // SMTP Configuration
+  const transporter = nodemailer.createTransport({
+    service: 'gmail',
+    auth: {
+      user: process.env.SMTP_USER,
+      pass: process.env.SMTP_PASS,
+    },
+  });
+
+  const attachments = [];
+  
+  // Attach PDF
+  if (pdfBase64) {
+    const filename = isGST 
+      ? `GST_Report_${gstData.date || 'Report'}.pdf`
+      : isPO 
+        ? `PurchaseOrder_${poData.poNumber || 'PO'}.pdf` 
+        : `Invoice_${invoiceData?.invoiceMeta?.invoiceNumber || 'INV'}.pdf`;
+      
+    attachments.push({
+      filename,
+      content: pdfBase64.split('base64,')[1] || pdfBase64,
+      encoding: 'base64'
+    });
+  }
+
+  // Handle Logo Embedding if exists
+  let logoCid = 'companyLogo';
+  if (myBusiness.logo && myBusiness.logo.startsWith('data:image')) {
+     attachments.push({
+        filename: 'logo.png',
+        content: myBusiness.logo.split('base64,')[1],
+        encoding: 'base64',
+        cid: logoCid
+     });
+  }
+
+  // Choose Template
+  const htmlContent = isGST
+    ? getGSTReportEmailTemplate({
+        myBusiness,
+        reportMeta: { date: gstData.date },
+        logoCid
+      })
+    : isPO 
+      ? getPurchaseOrderEmailTemplate({
+          myBusiness,
+          vendorName: poData.vendorName,
+          poMeta: poData.poMeta,
+          totalValue: poData.totalValue,
+          currency: poData.currency,
+          logoCid
+        })
+      : getProfessionalEmailTemplate({
+          myBusiness,
+          customer: invoiceData.customer,
+          invoiceMeta: invoiceData.invoiceMeta,
+          totals: invoiceData.totals,
+          currency: invoiceData.currency,
+          logoCid,
+          invoiceData
+        });
+
+  try {
+    const subject = isGST
+      ? `GST Compliance Report - ${myBusiness.name}`
+      : isPO 
+        ? `Purchase Order #${poData.poNumber} from ${myBusiness.name}`
+        : `${invoiceData?.invoiceMeta?.docType === 'quotation' ? 'Quotation' : 'Tax Invoice'} #${invoiceData?.invoiceMeta?.invoiceNumber} from ${myBusiness.name}`;
+
+    await transporter.sendMail({
+      from: `"${myBusiness.name}" <${process.env.SMTP_USER}>`,
+      to,
+      subject,
+      html: htmlContent,
+      attachments
+    });
+    res.json({ success: true, message: 'Email sent successfully!' });
+  } catch (err) {
+    console.error('Email error:', err);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
 if (process.env.NODE_ENV !== 'production') {
   const PORT = process.env.PORT || 3001;
   app.listen(PORT, () => {

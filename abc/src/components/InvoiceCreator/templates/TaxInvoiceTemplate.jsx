@@ -19,9 +19,9 @@ const TaxInvoiceTemplate = ({
   const signImg = <img src={myBusiness.signature} alt="Sign" className="h-16 w-auto object-contain mx-auto" />;
 
   return (
-    <div className="bg-white text-slate-900 font-sans print:p-0 w-[210mm] min-h-[280mm] mx-auto p-8 border border-slate-300 print:border-none shadow-lg print:shadow-none overflow-hidden">
+    <div style={{ backgroundColor: '#ffffff', color: '#0f172a' }} className="font-sans print:p-0 w-[210mm] min-h-[280mm] mx-auto p-8 border border-[#cbd5e1] print:border-none shadow-lg print:shadow-none overflow-hidden text-black">
       {/* Header */}
-      <div className="flex justify-between items-start border-b-2 border-slate-900 pb-2 mb-4">
+      <div style={{ borderBottom: '2px solid #0f172a' }} className="flex justify-between items-start pb-2 mb-4">
         <div className="flex gap-6">
           {logoImg}
           <div>
@@ -31,18 +31,18 @@ const TaxInvoiceTemplate = ({
           </div>
         </div>
         <div className="text-right">
-          <h2 className="text-3xl font-black tracking-tighter text-slate-900 mb-2 uppercase">{getDocTypeDisplayName()}</h2>
-          <span className="border-2 border-slate-900 px-3 py-1 text-[10px] font-black uppercase">Original for Recipient</span>
+          <h2 style={{ color: '#0f172a' }} className="text-3xl font-black tracking-tighter mb-2 uppercase">{getDocTypeDisplayName()}</h2>
+          <span style={{ borderColor: '#0f172a' }} className="border-2 px-3 py-1 text-[10px] font-black uppercase">Original for Recipient</span>
         </div>
       </div>
 
       {/* Info Grid */}
-      <div className="grid grid-cols-2 mb-4 text-[10px] border-t-2 border-b-2 border-slate-900 py-2">
+      <div style={{ borderTop: '2px solid #0f172a', borderBottom: '2px solid #0f172a' }} className="grid grid-cols-2 mb-4 text-[10px] py-2">
         <div className="p-0 space-y-2">
           <p className="font-black uppercase text-slate-400 text-[8px] tracking-widest border-b pb-1 mb-2">Details of Buyer | Billed To:</p>
           <p className="text-sm font-black uppercase">{customer.name}</p>
           <p className="leading-relaxed">{customer.address}</p>
-          <p className="font-bold text-[11px] mt-2">GSTIN: {customer.gstin}</p>
+          {customer.gstin && <p className="font-bold text-[11px] mt-2">GSTIN: {customer.gstin}</p>}
         </div>
         <div className="p-0 pl-10 grid grid-cols-2 gap-x-4 gap-y-3">
           <div className="col-span-2 font-black uppercase text-slate-400 text-[8px] tracking-widest border-b pb-1 mb-1">Invoice Details:</div>
@@ -64,49 +64,49 @@ const TaxInvoiceTemplate = ({
       )}
 
       {/* Table */}
-      <table className="w-full border-collapse border-2 border-slate-900 text-[9px] mb-4">
+      <table style={{ borderCollapse: 'collapse', border: '2px solid #0f172a' }} className="w-full text-[9px] mb-4">
         <thead>
-          <tr className="border-b-2 border-slate-900 font-black uppercase tracking-wider">
-            <th className="border-r-2 border-slate-900 p-2 text-center w-12">Sr.</th>
-            <th className="border-r-2 border-slate-900 p-2 text-left">Description of Goods</th>
-            <th className="border-r-2 border-slate-900 p-2 text-center w-24">HSN/SAC</th>
-            <th className="border-r-2 border-slate-900 p-2 text-center w-16">Qty</th>
+          <tr style={{ borderBottom: '2px solid #0f172a' }} className="font-black uppercase tracking-wider">
+            <th style={{ borderRight: '2px solid #0f172a' }} className="p-2 text-center w-12">Sr.</th>
+            <th style={{ borderRight: '2px solid #0f172a' }} className="p-2 text-left">Description of Goods</th>
+            <th style={{ borderRight: '2px solid #0f172a' }} className="p-2 text-center w-24">HSN/SAC</th>
+            <th style={{ borderRight: '2px solid #0f172a' }} className="p-2 text-center w-16">Qty</th>
             {docType !== "delivery_challan" && (
               <>
-                <th className="border-r-2 border-slate-900 p-2 text-center w-16">Tax%</th>
-                <th className="border-r-2 border-slate-900 p-2 text-right w-28">Price</th>
+                <th style={{ borderRight: '2px solid #0f172a' }} className="p-2 text-center w-16">Tax%</th>
+                <th style={{ borderRight: '2px solid #0f172a' }} className="p-2 text-right w-28">Price</th>
                 <th className="p-2 text-right w-32">Total</th>
               </>
             )}
           </tr>
         </thead>
-        <tbody className="divide-y divide-slate-300">
+        <tbody style={{ borderBottom: '2px solid #0f172a' }} className="divide-y divide-[#cbd5e1]">
           {items.map((item, i) => (
             <tr key={item.id}>
-              <td className="border-r-2 border-slate-900 p-1 text-center font-bold">{i + 1}</td>
-              <td className="border-r-2 border-slate-900 p-1 font-black uppercase leading-tight">{item.name}</td>
-              <td className="border-r-2 border-slate-900 p-1 text-center font-bold">{item.hsn}</td>
-              <td className="border-r-2 border-slate-900 p-1 text-center font-bold">{item.quantity}</td>
+              <td style={{ borderRight: '2px solid #0f172a' }} className="p-1 text-center font-bold">{i + 1}</td>
+              <td style={{ borderRight: '2px solid #0f172a' }} className="p-1 font-black uppercase leading-tight">{item.name}</td>
+              <td style={{ borderRight: '2px solid #0f172a' }} className="p-1 text-center font-bold">{item.hsn}</td>
+              <td style={{ borderRight: '2px solid #0f172a' }} className="p-1 text-center font-bold">{item.quantity}</td>
               {docType !== "delivery_challan" && (
                 <>
-                  <td className="border-r-2 border-slate-900 p-1 text-center font-bold">{item.taxRate}%</td>
-                  <td className="border-r-2 border-slate-900 p-1 text-right font-bold">{item.price.toLocaleString(undefined, {minimumFractionDigits: 2})}</td>
+                  <td style={{ borderRight: '2px solid #0f172a' }} className="p-1 text-center font-bold">{item.taxRate}%</td>
+                  <td style={{ borderRight: '2px solid #0f172a' }} className="p-1 text-right font-bold">{item.price.toLocaleString(undefined, {minimumFractionDigits: 2})}</td>
                   <td className="p-1 text-right font-black">{(item.quantity * item.price).toLocaleString(undefined, {minimumFractionDigits: 2})}</td>
                 </>
               )}
             </tr>
           ))}
         </tbody>
-        <tfoot className="border-t-2 border-slate-900 bg-slate-50 font-black uppercase text-[9px]">
+        <tfoot style={{ borderTop: '2px solid #0f172a', backgroundColor: '#f8fafc' }} className="font-black uppercase text-[9px]">
           <tr>
-            <td colSpan="3" className="border-r-2 border-slate-900 p-2 text-right">
+            <td style={{ borderRight: '2px solid #0f172a' }} colSpan="3" className="p-2 text-right">
               {docType === "delivery_challan" ? "Total Quantity" : "Total Before Tax"}
             </td>
-            <td className="border-r-2 border-slate-900 p-2 text-center">{totals.totalQty}</td>
+            <td style={{ borderRight: '2px solid #0f172a' }} className="p-2 text-center">{totals.totalQty}</td>
             {docType !== "delivery_challan" && (
               <>
-                <td className="border-r-2 border-slate-900"></td>
-                <td className="border-r-2 border-slate-900"></td>
+                <td style={{ borderRight: '2px solid #0f172a' }}></td>
+                <td style={{ borderRight: '2px solid #0f172a' }}></td>
                 <td className="p-2 text-right text-[11px]">{totals.subtotal}</td>
               </>
             )}
@@ -117,8 +117,8 @@ const TaxInvoiceTemplate = ({
       {/* Summary */}
       <div className="mt-4 grid grid-cols-2 gap-4 print:break-inside-avoid">
         <div className="space-y-6 text-[10px]">
-          <div className="p-2 h-fit bg-white">
-            <p className="font-black uppercase text-[9px] text-slate-400 mb-4 border-b border-slate-100 pb-2 tracking-[0.2em]">Bank Account Details:</p>
+          <div style={{ backgroundColor: '#ffffff' }} className="p-2 h-fit">
+            <p style={{ color: '#94a3b8', borderBottom: '1px solid #f1f5f9' }} className="font-black uppercase text-[9px] mb-4 pb-2 tracking-[0.2em]">Bank Account Details:</p>
             <div className="space-y-2">
               <p className="flex justify-between"><span>Bank Name:</span> <span className="font-black uppercase">{myBusiness.bankName}</span></p>
               <p className="flex justify-between"><span>A/c Number:</span> <span className="font-black uppercase tracking-widest">{myBusiness.accountNumber}</span></p>
@@ -126,44 +126,44 @@ const TaxInvoiceTemplate = ({
               <p className="flex justify-between"><span>Branch:</span> <span className="font-bold">{myBusiness.branch}</span></p>
             </div>
           </div>
-          <div className="p-2 h-fit bg-white">
-             <p className="font-black uppercase text-[9px] text-slate-400 mb-4 border-b border-slate-100 pb-2 tracking-[0.2em]">Terms & Conditions:</p>
-             <ul className="list-decimal list-inside space-y-2 font-bold text-slate-700">
+          <div style={{ backgroundColor: '#ffffff' }} className="p-2 h-fit">
+             <p style={{ color: '#94a3b8', borderBottom: '1px solid #f1f5f9' }} className="font-black uppercase text-[9px] mb-4 pb-2 tracking-[0.2em]">Terms & Conditions:</p>
+             <ul style={{ color: '#334155' }} className="list-decimal list-inside space-y-2 font-bold">
                 {terms.map((term, i) => term && <li key={i}>{term}</li>)}
              </ul>
           </div>
         </div>
         <div className="relative">
           {docType !== "delivery_challan" ? (
-            <div className="divide-y-2 divide-slate-900 overflow-hidden text-[10px] h-fit bg-white relative">
+            <div style={{ borderCollapse: 'collapse', border: '2px solid #0f172a', backgroundColor: '#ffffff' }} className="divide-y-2 divide-[#0f172a] overflow-hidden text-[10px] h-fit relative">
               <div className="p-2 flex justify-between items-center">
-                <span className="font-bold text-slate-500 uppercase tracking-widest text-[8px]">Taxable Amount</span>
+                <span style={{ color: '#64748b' }} className="font-bold uppercase tracking-widest text-[8px]">Taxable Amount</span>
                 <span className="font-black text-sm">{totals.taxableAmount}</span>
               </div>
               {taxType === "gst" ? (
                 <>
-                  <div className="p-2 flex justify-between items-center bg-slate-50/50">
-                    <span className="font-bold text-slate-500 uppercase tracking-widest text-[8px]">CGST</span>
+                  <div style={{ backgroundColor: '#f8fafc' }} className="p-2 flex justify-between items-center">
+                    <span style={{ color: '#64748b' }} className="font-bold uppercase tracking-widest text-[8px]">CGST</span>
                     <span className="font-black text-sm">{totals.cgst}</span>
                   </div>
                   <div className="p-2 flex justify-between items-center">
-                    <span className="font-bold text-slate-500 uppercase tracking-widest text-[8px]">SGST</span>
+                    <span style={{ color: '#64748b' }} className="font-bold uppercase tracking-widest text-[8px]">SGST</span>
                     <span className="font-black text-sm">{totals.sgst}</span>
                   </div>
                 </>
               ) : (
-                <div className="p-2 flex justify-between items-center bg-slate-50/50">
-                  <span className="font-bold text-slate-500 uppercase tracking-widest text-[8px]">IGST</span>
+                <div style={{ backgroundColor: '#f8fafc' }} className="p-2 flex justify-between items-center">
+                  <span style={{ color: '#64748b' }} className="font-bold uppercase tracking-widest text-[8px]">IGST</span>
                   <span className="font-black text-sm">{totals.igst}</span>
                 </div>
               )}
-              <div className="p-2 bg-white border-t-2 border-slate-900 flex justify-between items-center">
-                <div className="text-[9px] uppercase tracking-[0.3em] font-black text-slate-400">Grand Total</div>
-                <div className="text-xl font-black tracking-tighter text-slate-900">{currency} {totals.grandTotal}</div>
+              <div style={{ borderTop: '2px solid #0f172a', backgroundColor: '#ffffff' }} className="p-2 flex justify-between items-center">
+                <div style={{ color: '#94a3b8' }} className="text-[9px] uppercase tracking-[0.3em] font-black">Grand Total</div>
+                <div style={{ color: '#0f172a' }} className="text-xl font-black tracking-tighter">{currency} {totals.grandTotal}</div>
               </div>
-              <div className="p-2 bg-slate-50 border-t-4 border-slate-100">
-                 <span className="font-black text-[8px] uppercase block mb-1 text-slate-400 tracking-[0.2em]">Amount in Words:</span>
-                 <p className="font-black text-slate-800 leading-tight text-[11px] uppercase italic">{numberToWords(totals.grandTotalInt)} Only</p>
+              <div style={{ borderTop: '4px solid #f1f5f9', backgroundColor: '#f8fafc' }} className="p-2">
+                 <span style={{ color: '#94a3b8' }} className="font-black text-[8px] uppercase block mb-1 tracking-[0.2em]">Amount in Words:</span>
+                 <p style={{ color: '#1e293b' }} className="font-black leading-tight text-[11px] uppercase italic">{numberToWords(totals.grandTotalInt)} Only</p>
               </div>
             </div>
           ) : (
@@ -175,26 +175,26 @@ const TaxInvoiceTemplate = ({
       </div>
 
       {/* Signature Area */}
-      <div className="mt-4 grid grid-cols-2 border-t-2 border-b-2 border-slate-900 h-28 overflow-hidden print:break-inside-avoid bg-white">
-        <div className="p-5 border-r-2 border-slate-900 flex flex-col justify-between bg-white">
+      <div style={{ borderTop: '2px solid #0f172a', borderBottom: '2px solid #0f172a', backgroundColor: '#ffffff' }} className="mt-4 grid grid-cols-2 h-28 overflow-hidden print:break-inside-avoid">
+        <div style={{ borderRight: '2px solid #0f172a', backgroundColor: '#ffffff' }} className="p-5 flex flex-col justify-between">
            <p className="font-black uppercase text-[10px] tracking-widest">
               {docType === "delivery_challan" ? "Receiver's Signature:" : "Customer's Acceptance:"}
            </p>
-           <div className="text-right italic text-slate-300 text-[10px] mb-2 border-b border-dashed border-slate-300 pb-2">Seal & Signature</div>
+           <div style={{ color: '#cbd5e1', borderBottom: '1px dashed #cbd5e1' }} className="text-right italic text-[10px] mb-2 pb-2">Seal & Signature</div>
         </div>
-        <div className="p-5 text-center flex flex-col justify-between items-center bg-white relative">
-           <p className="font-black uppercase text-[10px] tracking-tight text-slate-800">For {myBusiness.name}</p>
+        <div style={{ backgroundColor: '#ffffff' }} className="p-5 text-center flex flex-col justify-between items-center relative">
+           <p style={{ color: '#1e293b' }} className="font-black uppercase text-[10px] tracking-tight">For {myBusiness.name}</p>
            <div className="my-2">
               {signImg}
            </div>
            <div className="w-full flex flex-col items-center">
-              <div className="w-64 border-t-2 border-slate-900 mb-1"></div>
+              <div style={{ borderTop: '2px solid #0f172a' }} className="w-64 mb-1"></div>
               <p className="font-black uppercase tracking-widest text-[10px]">Authorized Signatory</p>
            </div>
         </div>
       </div>
       
-      <p className="text-center mt-4 text-[8px] text-slate-400 font-black uppercase tracking-[0.3em]">Computer Generated Document</p>
+      <p style={{ color: '#94a3b8' }} className="text-center mt-4 text-[8px] font-black uppercase tracking-[0.3em]">Computer Generated Document</p>
 
       {/* Annexure Section */}
       {showAnnexure && annexures.map((ann, idx) => {

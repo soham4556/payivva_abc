@@ -1,6 +1,6 @@
 import React from "react";
 
-const PaidHistory = ({ savedInvoices, currency, setActiveTab, updateStatus, loadInvoice, handleDownloadPDF, deleteInvoice, permanentDeleteInvoice, revenueLogs }) => {
+const PaidHistory = ({ savedInvoices, currency, setActiveTab, updateStatus, loadInvoice, handleDownloadPDF, deleteInvoice, permanentDeleteInvoice, revenueLogs, handleEmail }) => {
   const paidInvoices = savedInvoices.filter(inv => inv.status === 'paid_archived');
 
   return (
@@ -82,6 +82,13 @@ const PaidHistory = ({ savedInvoices, currency, setActiveTab, updateStatus, load
                         title="Download PDF"
                       >
                         <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+                      </button>
+                      <button 
+                        onClick={() => handleEmail(inv)} 
+                        className="p-3 bg-emerald-600 text-white rounded-xl shadow-lg hover:scale-110 transition-all"
+                        title="Send Email"
+                      >
+                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"></path><polyline points="22,6 12,13 2,6"></polyline></svg>
                       </button>
                       <button onClick={() => updateStatus(inv.id, 'active')} className="bg-white border-2 border-slate-100 text-slate-400 p-3 rounded-xl hover:text-blue-600 hover:border-blue-100 transition-all" title="Restore to Active">
                         <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="23 4 23 10 17 10"></polyline><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path></svg>

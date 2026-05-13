@@ -12,6 +12,7 @@ const Sidebar = ({
     { id: "analytics", label: "Analytics", icon: "📈" },
     { id: "invoices", label: "Sales Invoice", icon: "📄" },
     { id: "inventory", label: "Inventory", icon: "📦" },
+    { id: "credit_manager", label: "Credit Ledger", icon: "💰" },
     { id: "purchase_orders", label: "Create Purchase Order", icon: "🛒" },
     { id: "expenses", label: "Expenses", icon: "💸" },
   ];
@@ -22,6 +23,7 @@ const Sidebar = ({
     { id: "po_history", label: "PO History", icon: "🕒" },
     { id: "daily_archives", label: "Daily Master Archives", icon: "🏛️" },
     { id: "recycle_bin", label: "Recycle Bin", icon: "♻️" },
+    { id: "gst_reports", label: "GST Compliance Reports", icon: "📑" },
   ];
 
   const NavItem = ({ item }) => (

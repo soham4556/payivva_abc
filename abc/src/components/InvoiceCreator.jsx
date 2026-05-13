@@ -1,4 +1,7 @@
 import React, { useState, useMemo, useEffect } from "react";
+import AdvancedAnalytics from "./InvoiceCreator/components/AdvancedAnalytics";
+import AISales from "./InvoiceCreator/components/AISales";
+import GSTReports from "./InvoiceCreator/components/GSTReports";
 import Sidebar from "./InvoiceCreator/components/Sidebar";
 import Dashboard from "./InvoiceCreator/components/Dashboard";
 import InvoiceList from "./InvoiceCreator/components/InvoiceList";
@@ -16,6 +19,10 @@ import Analytics from "./InvoiceCreator/components/Analytics";
 import AuditTemplate from "./InvoiceCreator/templates/AuditTemplate";
 import PaidHistory from "./InvoiceCreator/components/PaidHistory";
 import DailyArchives from "./InvoiceCreator/components/DailyArchives";
+import CreditManager from "./InvoiceCreator/components/CreditManager";
+import jsPDF from "jspdf";
+import html2canvas from "html2canvas";
+
 
 const InvoiceCreator = () => {
   const [docType, setDocType] = useState("invoice");
@@ -48,6 +55,15 @@ const InvoiceCreator = () => {
   const [isAuditPrinting, setIsAuditPrinting] = useState(false);
   const [auditReportData, setAuditReportData] = useState([]);
   const [auditTimeframe, setAuditTimeframe] = useState("monthly");
+  const [showAdvancedAnalytics, setShowAdvancedAnalytics] = useState(false);
+  const [selectedDayAnalytics, setSelectedDayAnalytics] = useState(null);
+  const [showAISales, setShowAISales] = useState(false);
+  const [showEmailModal, setShowEmailModal] = useState(false);
+  const [emailMode, setEmailMode] = useState('invoice'); // 'invoice' or 'po'
+  const [emailTarget, setEmailTarget] = useState({ to: '', data: null, business: null });
+  const [manualFile, setManualFile] = useState(null);
+  const [isSending, setIsSending] = useState(false);
+
 
   const [invoiceMeta, setInvoiceMeta] = useState({
     invoiceNumber: "INV/2026/042",
@@ -142,6 +158,9 @@ const InvoiceCreator = () => {
     },
   ]);
 
+  const [paymentStatus, setPaymentStatus] = useState("paid");
+  const [pendingAmount, setPendingAmount] = useState(0);
+
   // API Methods
   const fetchInvoices = async () => {
     setIsLoading(true);
@@ -206,6 +225,15 @@ const InvoiceCreator = () => {
     } catch (err) {
       console.error("Error fetching POs:", err);
     }
+  };
+
+  const fetchData = () => {
+    fetchInvoices();
+    fetchClients();
+    fetchProducts();
+    fetchExpenses();
+    fetchPOs();
+    fetchRevenue();
   };
 
   useEffect(() => {
@@ -1013,27 +1041,44 @@ const InvoiceCreator = () => {
 
   const handleSubmit = async (e) => {
     if (e) e.preventDefault();
-    const dataToSave = {
-      invoiceMeta,
-      customer,
-      totals,
-      items,
-      annexures,
-      docType,
-      terms,
-      taxType,
-      currency,
-    };
-    const response = await fetch("/api/invoices", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(dataToSave),
-    });
-    if (response.ok) {
-      alert("Invoice saved successfully!");
-      window.print();
-      resetFormOnly();
-      fetchInvoices();
+    try {
+      const invoiceData = {
+        invoiceMeta,
+        customer,
+        totals,
+        items,
+        annexures,
+        docType,
+        terms,
+        taxType,
+        currency,
+        payment_status: paymentStatus,
+        pending_amount: paymentStatus === "pending" ? pendingAmount : 0,
+      };
+      const response = await fetch("/api/invoices", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(invoiceData),
+      });
+      if (response.ok) {
+        alert("Invoice saved successfully!");
+        window.print();
+        // Reset Form
+        setItems([{ id: Date.now(), name: "", hsn: "", make: "", quantity: 1, price: 0, taxRate: 18 }]);
+        setCustomer({ name: "", address: "", gstin: "", site: "", contactPerson: "", phone: "" });
+        setPaymentStatus("paid");
+        setPendingAmount(0);
+        
+        fetchInvoices();
+        fetchProducts();
+        fetchRevenue();
+      } else {
+        const errorData = await response.json();
+        alert("❌ Error: " + (errorData.error || "Failed to save invoice"));
+      }
+    } catch (err) {
+      console.error("Save Error:", err);
+      alert("❌ System Error: " + err.message);
     }
   };
 
@@ -1138,6 +1183,189 @@ const InvoiceCreator = () => {
     return names[docType] || "DOCUMENT";
   };
 
+  const handleEmail = (inv) => {
+    setEmailMode('invoice');
+    const customerEmail = inv.customer_email || "";
+    const parsedData = inv.data ? JSON.parse(inv.data) : {};
+    
+    setEmailTarget({
+      to: customerEmail,
+      data: {
+        ...parsedData,
+        invoiceMeta: parsedData.invoiceMeta || { invoiceNumber: inv.invoice_number, issueDate: inv.issue_date, docType: inv.doc_type },
+        customer: parsedData.customer || { name: inv.customer_name, email: inv.customer_email },
+        totals: parsedData.totals || { grandTotal: inv.grand_total },
+        currency: parsedData.currency || currency,
+        status: inv.status,
+        pendingAmount: inv.pending_amount
+      },
+      business: myBusiness
+    });
+    setManualFile(null);
+    setShowEmailModal(true);
+  };
+
+  const handleEmailPO = (po) => {
+    setEmailMode('po');
+    setEmailTarget({
+      to: "", // POs might not have a saved vendor email, user can enter
+      data: {
+        vendorName: po.vendor_name,
+        poMeta: { poNumber: po.po_number, date: po.po_date },
+        totalValue: po.total_value,
+        currency
+      },
+      business: myBusiness
+    });
+    setManualFile(null);
+    setShowEmailModal(true);
+  };
+
+  const handleEmailGST = (report) => {
+    setEmailMode('gst');
+    setEmailTarget({
+      to: "", // Accountants might vary
+      data: {
+        date: new Date().toLocaleDateString()
+      },
+      business: myBusiness
+    });
+    setManualFile(null);
+    setShowEmailModal(true);
+  };
+
+  const handleSendEmailFinal = async (mode) => {
+    const { to, data: invoiceData, business: myBusiness } = emailTarget;
+    if (!to) return alert("Please enter recipient email");
+    
+    setIsSending(true);
+    try {
+      let finalPdfBase64 = "";
+
+      if (mode === 'auto') {
+        // ... (existing auto logic)
+        const printDiv = document.createElement("div");
+        printDiv.style.position = "absolute";
+        printDiv.style.left = "-9999px";
+        printDiv.style.top = "0";
+        printDiv.style.width = "850px";
+        document.body.appendChild(printDiv);
+
+        const root = (await import("react-dom/client")).createRoot(printDiv);
+        const styleTag = document.createElement("style");
+        styleTag.innerHTML = `
+          .flex { display: flex !important; }
+          .justify-between { justify-content: space-between !important; }
+          .grid { display: grid !important; }
+          .grid-cols-2 { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; }
+          .gap-4 { gap: 1rem !important; }
+          .gap-6 { gap: 1.5rem !important; }
+          .text-right { text-align: right !important; }
+          .text-center { text-align: center !important; }
+          .uppercase { text-transform: uppercase !important; }
+          .font-black { font-weight: 900 !important; }
+          .font-bold { font-weight: 700 !important; }
+          .w-full { width: 100% !important; }
+          .mx-auto { margin-left: auto !important; margin-right: auto !important; }
+          table { width: 100% !important; border-collapse: collapse !important; }
+        `;
+        printDiv.appendChild(styleTag);
+
+        await new Promise(resolve => {
+          root.render(
+            <div style={{ padding: '40px', background: 'white' }}>
+              <TaxInvoiceTemplate 
+                invoiceMeta={invoiceData.invoiceMeta} 
+                customer={invoiceData.customer} 
+                items={invoiceData.items || []} 
+                totals={invoiceData.totals} 
+                currency={invoiceData.currency || currency}
+                myBusiness={myBusiness}
+              />
+            </div>
+          );
+          setTimeout(resolve, 2500);
+        });
+
+        const canvas = await html2canvas(printDiv, { 
+          scale: 1.5,
+          useCORS: true,
+          onclone: (clonedDoc) => {
+            const styles = clonedDoc.querySelectorAll('style');
+            styles.forEach(s => {
+              if (s.textContent?.includes('oklch')) {
+                s.textContent = s.textContent.replace(/oklch\([^)]+\)/g, '#000000');
+              }
+            });
+          }
+        });
+        
+        const imgData = canvas.toDataURL("image/jpeg", 0.8);
+        const pdf = new jsPDF("p", "mm", "a4");
+        const pdfWidth = pdf.internal.pageSize.getWidth();
+        pdf.addImage(imgData, "JPEG", 0, 0, pdfWidth, (canvas.height * pdfWidth) / canvas.width);
+        finalPdfBase64 = pdf.output('datauristring');
+        document.body.removeChild(printDiv);
+      } else {
+        if (!manualFile) throw new Error("Please select a file first");
+        finalPdfBase64 = await new Promise((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => resolve(reader.result);
+          reader.onerror = reject;
+          reader.readAsDataURL(manualFile);
+        });
+      }
+
+      let logoBase64 = myBusiness.logo;
+      if (myBusiness.logo && !myBusiness.logo.startsWith('data:')) {
+         try {
+           const res = await fetch(myBusiness.logo);
+           const blob = await res.blob();
+           logoBase64 = await new Promise(r => {
+             const rd = new FileReader();
+             rd.onloadend = () => r(rd.result);
+             rd.readAsDataURL(blob);
+           });
+         } catch (e) { console.warn(e); }
+      }
+
+      const response = await fetch("http://localhost:3001/api/send-email", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          to,
+          isPO: emailMode === 'po',
+          isGST: emailMode === 'gst',
+          gstData: emailMode === 'gst' ? {
+            date: invoiceData.date
+          } : null,
+          poData: emailMode === 'po' ? {
+            vendorName: invoiceData.vendorName,
+            poMeta: invoiceData.poMeta,
+            totalValue: invoiceData.totalValue,
+            currency: invoiceData.currency,
+            poNumber: invoiceData.poMeta?.poNumber
+          } : null,
+          invoiceData: emailMode === 'invoice' ? { 
+            ...invoiceData, 
+            pendingAmount: invoiceData.pendingAmount || 0 
+          } : null,
+          myBusiness: { ...myBusiness, logo: logoBase64 },
+          pdfBase64: finalPdfBase64
+        }),
+      });
+
+      if (!response.ok) throw new Error("Failed to send email");
+      alert("✅ Email sent successfully!");
+      setShowEmailModal(false);
+    } catch (err) {
+      console.error(err);
+      alert("❌ Error: " + err.message);
+    } finally {
+      setIsSending(false);
+    }
+  };
+
   const renderContent = () => {
     switch (activeTab) {
       case "dashboard":
@@ -1173,6 +1401,7 @@ const InvoiceCreator = () => {
             handleDownloadPDF={handleDownloadPDF}
             cancelInvoice={cancelInvoice}
             deleteInvoice={deleteInvoice}
+            handleEmail={handleEmail}
           />
         );
       case "paid_history":
@@ -1187,6 +1416,7 @@ const InvoiceCreator = () => {
             deleteInvoice={deleteInvoice}
             permanentDeleteInvoice={permanentDeleteInvoice}
             revenueLogs={revenueLogs}
+            handleEmail={handleEmail}
           />
         );
       case "cancelled":
@@ -1232,6 +1462,7 @@ const InvoiceCreator = () => {
             loadPO={loadPO}
             updatePOStatus={updatePOStatus}
             bulkClearPOHistory={bulkClearPOHistory}
+            handleEmailPO={handleEmailPO}
           />
         );
       case "expenses":
@@ -1244,7 +1475,49 @@ const InvoiceCreator = () => {
           />
         );
       case "daily_archives":
-        return <DailyArchives currency={currency} />;
+        return showAdvancedAnalytics ? (
+          <AdvancedAnalytics
+            currency={currency}
+            targetData={selectedDayAnalytics}
+            onBack={() => {
+              setShowAdvancedAnalytics(false);
+              setSelectedDayAnalytics(null);
+            }}
+          />
+        ) : showAISales ? (
+          <AISales 
+            currency={currency} 
+            onBack={() => setShowAISales(false)} 
+          />
+        ) : (
+          <DailyArchives 
+            currency={currency} 
+            onViewAnalytics={(arc) => {
+              setSelectedDayAnalytics(arc);
+              setShowAdvancedAnalytics(true);
+            }}
+          />
+        );
+      case "gst_reports":
+        return (
+          <GSTReports 
+            currency={currency} 
+            myBusiness={myBusiness} 
+            archives={[]} 
+            handleEmailGST={handleEmailGST}
+          />
+        );
+      case "credit_manager":
+        return (
+          <CreditManager 
+            currency={currency} 
+            fetchInvoices={fetchInvoices} 
+            myBusiness={myBusiness} 
+            handleEmail={handleEmail} 
+            loadInvoice={loadInvoice}
+            handleDownloadPDF={handleDownloadPDF}
+          />
+        );
       case "recycle_bin":
         return (
           <RecycleBin
@@ -1346,6 +1619,10 @@ const InvoiceCreator = () => {
                 annexures={annexures}
               />
             )}
+            paymentStatus={paymentStatus}
+            setPaymentStatus={setPaymentStatus}
+            pendingAmount={pendingAmount}
+            setPendingAmount={setPendingAmount}
           />
         );
       default:
@@ -1358,7 +1635,7 @@ const InvoiceCreator = () => {
   };
 
   return (
-    <div className="flex min-h-screen bg-[#F1F5F9] font-sans text-slate-900">
+    <div className="flex min-h-screen bg-[#F1F5F9] font-sans text-slate-900 print:bg-white">
       <style
         dangerouslySetInnerHTML={{
           __html: `
@@ -1366,8 +1643,10 @@ const InvoiceCreator = () => {
           @page { size: A4; margin: 15mm 15mm 20mm 15mm; }
           body { background: white !important; }
           .no-print { display: none !important; }
+          main { margin-left: 0 !important; padding: 0 !important; width: 100% !important; }
+          main > div { max-width: none !important; width: 100% !important; margin: 0 !important; padding: 0 !important; }
           #print-template { 
-            display: block !important; 
+            display: ${activeTab === "gst_reports" ? "none" : "block"} !important; 
             position: static !important; 
             width: 100% !important; 
             opacity: 1 !important; 
@@ -1391,12 +1670,27 @@ const InvoiceCreator = () => {
         businessName="Payivva."
       />
 
-      <main className="flex-1 ml-64 no-print transition-all duration-300">
-        <header className="h-24 bg-white/80 backdrop-blur-xl border-b-2 border-slate-100 px-12 flex items-center justify-between sticky top-0 z-40">
+      <main className={`flex-1 ml-64 ${activeTab === "gst_reports" ? "" : "no-print"} transition-all duration-300`}>
+        <header className="h-24 bg-white/80 backdrop-blur-xl border-b-2 border-slate-100 px-12 flex items-center justify-between sticky top-0 z-40 no-print">
           <h2 className="text-2xl font-black text-slate-900 tracking-tighter capitalize">
             {activeTab.replace("_", " ")}
           </h2>
           <div className="flex items-center gap-4">
+            <button
+              onClick={() => {
+                setActiveTab("daily_archives");
+                setShowAISales(true);
+                setShowAdvancedAnalytics(false);
+              }}
+              className="bg-slate-900 text-white p-4 rounded-2xl shadow-xl hover:bg-blue-600 transition-all group relative"
+              title="AI Sales Forecasting"
+            >
+              <span className="text-xl group-hover:scale-125 transition-transform block">🤖</span>
+              <span className="absolute -top-1 -right-1 flex h-3 w-3">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75"></span>
+                <span className="relative inline-flex rounded-full h-3 w-3 bg-blue-500"></span>
+              </span>
+            </button>
             {activeTab === "invoices" && (
               <>
                 <button
@@ -1454,18 +1748,26 @@ const InvoiceCreator = () => {
               </svg>
             </button>
             <button
-              onClick={activeTab === "invoices" ? handleSubmit : () => {}}
-              className="bg-slate-900 text-white font-black text-[10px] uppercase tracking-[0.2em] py-4 px-10 rounded-2xl shadow-2xl shadow-slate-300 transition-all hover:scale-105"
+              onClick={
+                activeTab === "invoices"
+                  ? handleSubmit
+                  : () => {
+                      setActiveTab("daily_archives");
+                      setShowAdvancedAnalytics(true);
+                    }
+              }
+              className={`font-black text-[10px] uppercase tracking-[0.2em] py-4 px-10 rounded-2xl shadow-2xl shadow-slate-300 transition-all hover:scale-105 ${activeTab === "invoices" ? "bg-slate-900 text-white" : "bg-blue-600 text-white shadow-blue-200"}`}
             >
-              {activeTab === "invoices" ? "Save & Print" : `Add New`}
+              {activeTab === "invoices" ? "Save & Print" : "Advanced Analytics"}
             </button>
           </div>
         </header>
-        <div className="p-12 max-w-7xl mx-auto">{renderContent()}</div>
+        <div className={`p-12 max-w-7xl mx-auto ${activeTab === "gst_reports" ? "print:max-w-none print:p-0 print:m-0" : ""}`}>{renderContent()}</div>
       </main>
 
       <div
         id="print-template"
+        className="no-print-when-gst"
         style={{
           position: "fixed",
           left: "0",
@@ -1475,6 +1777,7 @@ const InvoiceCreator = () => {
           opacity: "0.01",
           pointerEvents: "none",
           background: "white",
+          display: activeTab === "gst_reports" ? "none" : "block"
         }}
       >
         {isAuditPrinting ? (
@@ -1529,6 +1832,79 @@ const InvoiceCreator = () => {
                   Do not close this tab. Your data is being secured.
                 </p>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* --- EMAIL MODAL --- */}
+      {showEmailModal && (
+        <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+          <div className="bg-white rounded-[2.5rem] shadow-2xl w-full max-w-md overflow-hidden transform transition-all border border-slate-100">
+            <div className="bg-[#0f172a] p-8 text-white flex justify-between items-center">
+               <div>
+                  <h3 className="text-xl font-black uppercase tracking-tight">
+                    {emailMode === 'po' ? 'Email Purchase Order' : 
+                     emailMode === 'gst' ? 'Email GST Report' : 'Email Invoice'}
+                  </h3>
+                  <p className="text-blue-400 text-[10px] font-bold uppercase tracking-widest mt-1">
+                    {emailMode === 'po' ? 'Vendor Communication' : 
+                     emailMode === 'gst' ? 'Taxation & Compliance' : 'Professional Delivery'}
+                  </p>
+               </div>
+               <button onClick={() => setShowEmailModal(false)} className="hover:bg-white/10 p-2 rounded-full transition-colors">
+                  <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" /></svg>
+               </button>
+            </div>
+            
+            <div className="p-8 space-y-8">
+               <div>
+                  <label className="block text-[10px] font-black uppercase text-slate-400 mb-2 tracking-widest">Recipient Email</label>
+                  <input 
+                    type="email" 
+                    value={emailTarget.to} 
+                    onChange={(e) => setEmailTarget({...emailTarget, to: e.target.value})}
+                    placeholder="customer@example.com"
+                    className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl px-5 py-4 font-bold focus:border-blue-500 focus:ring-0 transition-all outline-none text-slate-700"
+                  />
+               </div>
+
+               <div className="pt-4 border-t border-slate-100">
+                  <div className="flex items-center justify-between mb-4">
+                     <label className="block text-[10px] font-black uppercase text-slate-400 tracking-widest">Upload Invoice PDF</label>
+                     <span className="bg-blue-50 text-blue-600 text-[8px] font-black px-2 py-1 rounded-full uppercase tracking-tighter">Required</span>
+                  </div>
+                  
+                  <div className="space-y-6">
+                    <div className="relative group">
+                      <input 
+                        type="file" 
+                        accept=".pdf"
+                        onChange={(e) => setManualFile(e.target.files[0])}
+                        className="block w-full text-xs text-slate-500 file:mr-4 file:py-3 file:px-6 file:rounded-2xl file:border-0 file:text-[10px] file:font-black file:bg-slate-100 file:text-slate-700 hover:file:bg-slate-200 cursor-pointer border-2 border-dashed border-slate-200 p-2 rounded-2xl hover:border-blue-400 transition-all"
+                      />
+                    </div>
+                    
+                    <button 
+                      disabled={isSending || !manualFile}
+                      onClick={() => handleSendEmailFinal('manual')}
+                      className="w-full bg-blue-600 hover:bg-blue-700 text-white font-black py-5 rounded-2xl shadow-2xl shadow-blue-200 transition-all active:scale-[0.98] flex items-center justify-center gap-4 disabled:opacity-50 text-base"
+                    >
+                      {isSending ? 'SENDING INVOICE...' : (
+                        <>
+                          <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 8l7.89 5.26a2 2 0 002.22 0L24 8m-24 10a2 2 0 002 2h20a2 2 0 002-2V8a2 2 0 00-2-2H2a2 2 0 00-2 2v10z" /></svg>
+                          SEND PROFESSIONAL EMAIL
+                        </>
+                      )}
+                    </button>
+                  </div>
+               </div>
+            </div>
+            <div className="bg-blue-50/50 p-6 text-center border-t border-blue-50">
+               <p className="text-[10px] font-bold text-blue-600 flex items-center justify-center gap-3">
+                 <span className="w-6 h-6 bg-blue-600 text-white rounded-full flex items-center justify-center text-[10px]">!</span>
+                 Pro Tip: Download the PDF first, then upload it here.
+               </p>
             </div>
           </div>
         </div>

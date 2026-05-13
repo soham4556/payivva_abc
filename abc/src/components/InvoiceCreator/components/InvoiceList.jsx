@@ -1,6 +1,6 @@
 import React from "react";
 
-const InvoiceList = ({ savedInvoices, currency, bulkClearHistory, setActiveTab, updateStatus, loadInvoice, handleDownloadPDF, cancelInvoice, deleteInvoice }) => {
+const InvoiceList = ({ savedInvoices, currency, bulkClearHistory, setActiveTab, updateStatus, loadInvoice, handleDownloadPDF, cancelInvoice, deleteInvoice, handleEmail }) => {
   const activeInvoices = savedInvoices.filter(inv => inv.status !== 'cancelled' && inv.status !== 'trashed' && inv.status !== 'paid_archived');
   return (
     <div className="bg-white rounded-[3rem] border-2 border-slate-100 overflow-hidden shadow-2xl animate-in fade-in zoom-in-95 duration-500">
@@ -64,6 +64,13 @@ const InvoiceList = ({ savedInvoices, currency, bulkClearHistory, setActiveTab, 
                           className="bg-blue-600 text-white px-4 py-2 rounded-xl text-[9px] font-black uppercase hover:bg-blue-700 transition-all shadow-sm"
                         >
                           PDF
+                        </button>
+                        <button 
+                          onClick={() => handleEmail(inv)} 
+                          className="bg-green-600 text-white px-4 py-2 rounded-xl text-[9px] font-black uppercase hover:bg-green-700 transition-all shadow-sm"
+                          title="Email Invoice"
+                        >
+                           📧
                         </button>
                         <button 
                           onClick={() => cancelInvoice(inv.id)} 

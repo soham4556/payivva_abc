@@ -1,4 +1,6 @@
 import React from "react";
+import TaxInvoiceTemplate from "../templates/TaxInvoiceTemplate";
+import POTemplate from "../templates/POTemplate";
 
 const InvoiceForm = ({ 
   isPreviewMode, 
@@ -40,8 +42,145 @@ const InvoiceForm = ({
   setTaxType, 
   totals, 
   currency, 
-  renderPrintTemplate 
+  renderPrintTemplate,
+  paymentStatus,
+  setPaymentStatus,
+  pendingAmount,
+  setPendingAmount
 }) => {
+  const handleEmailInvoice = async () => {
+    const customerEmail = prompt("Please enter the customer's email address:", customer.email || "");
+    if (!customerEmail) return;
+
+    console.log("Starting email generation process for new invoice...");
+
+    try {
+      // 1. Generate PDF for attachment
+      console.log("Importing PDF libraries...");
+      const jsPDF = (await import("jspdf")).default;
+      const html2canvas = (await import("html2canvas")).default;
+      
+      console.log("Rendering hidden template...");
+      const printDiv = document.createElement("div");
+      printDiv.style.position = "fixed";
+      printDiv.style.left = "0";
+      printDiv.style.top = "0";
+      printDiv.style.width = "850px";
+      printDiv.style.opacity = "0";
+      printDiv.style.zIndex = "-1";
+      document.body.appendChild(printDiv);
+
+      const root = (await import("react-dom/client")).createRoot(printDiv);
+      const styleTag = document.createElement("style");
+      styleTag.innerHTML = `
+        .flex { display: flex !important; }
+        .justify-between { justify-content: space-between !important; }
+        .grid { display: grid !important; }
+        .grid-cols-2 { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; }
+        .gap-4 { gap: 1rem !important; }
+        .gap-6 { gap: 1.5rem !important; }
+        .text-right { text-align: right !important; }
+        .text-center { text-align: center !important; }
+        .uppercase { text-transform: uppercase !important; }
+        .font-black { font-weight: 900 !important; }
+        .font-bold { font-weight: 700 !important; }
+        .w-full { width: 100% !important; }
+        .mx-auto { margin-left: auto !important; margin-right: auto !important; }
+        table { width: 100% !important; border-collapse: collapse !important; }
+      `;
+      printDiv.appendChild(styleTag);
+
+      await new Promise(resolve => {
+        root.render(
+          <div style={{ padding: '40px', background: 'white' }}>
+            <TaxInvoiceTemplate 
+              invoiceMeta={invoiceMeta} 
+              customer={customer} 
+              items={items} 
+              totals={totals} 
+              myBusiness={myBusiness} 
+              currency={currency}
+              getDocTypeDisplayName={() => (invoiceMeta.docType === 'quotation' ? 'QUOTATION' : 'TAX INVOICE')}
+              numberToWords={() => ""}
+              terms={terms || []}
+              taxType="gst"
+              annexures={annexures || []}
+            />
+          </div>
+        );
+        setTimeout(resolve, 2000);
+      });
+
+      const canvas = await html2canvas(printDiv, { 
+        scale: 1.5,
+        useCORS: true,
+        logging: true,
+        allowTaint: true,
+        onclone: (clonedDoc) => {
+          const styles = clonedDoc.querySelectorAll('style');
+          styles.forEach(s => {
+            if (s.textContent?.includes('oklch')) {
+               s.textContent = s.textContent.replace(/oklch\([^)]+\)/g, '#000000');
+            }
+          });
+        }
+      });
+      
+      const imgData = canvas.toDataURL("image/jpeg", 0.8);
+      if (imgData.length < 100) throw new Error("Canvas capture failed");
+
+      const pdf = new jsPDF("p", "mm", "a4");
+      const imgProps = pdf.getImageProperties(imgData);
+      const pdfWidth = pdf.internal.pageSize.getWidth();
+      const pdfHeight = (imgProps.height * pdfWidth) / imgProps.width;
+      pdf.addImage(imgData, "JPEG", 0, 0, pdfWidth, pdfHeight);
+      const pdfBase64 = pdf.output('datauristring');
+      document.body.removeChild(printDiv);
+      console.log("PDF generated. Size:", Math.round(pdfBase64.length / 1024), "KB");
+
+      // 2. Prepare logo
+      let logoBase64 = myBusiness.logo;
+      if (myBusiness.logo && !myBusiness.logo.startsWith('data:')) {
+         try {
+           const response = await fetch(myBusiness.logo);
+           const blob = await response.blob();
+           logoBase64 = await new Promise(r => {
+             const reader = new FileReader();
+             reader.onloadend = () => r(reader.result);
+             reader.readAsDataURL(blob);
+           });
+         } catch (e) { console.warn(e); }
+      }
+
+      const response = await fetch("http://localhost:3001/api/send-email", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          to: customerEmail,
+          invoiceData: { invoiceMeta, customer, items, totals, currency, pendingAmount: totals?.grandTotal },
+          myBusiness: { ...myBusiness, logo: logoBase64 },
+          pdfBase64
+        }),
+      });
+
+      if (!response.ok) {
+        const text = await response.text();
+        throw new Error(`Server responded with ${response.status}: ${text.substring(0, 100)}`);
+      }
+
+      const data = await response.json();
+      if (data.success) {
+        alert("✅ Professional Invoice with PDF emailed successfully!");
+      } else {
+        console.error("Server-side email error:", data.error);
+        alert("❌ Error: " + data.error);
+      }
+    } catch (e) {
+      console.error("Frontend email generation error:", e);
+      alert("❌ Failed to generate or send email: " + e.message);
+    }
+  };
+
   if (isPreviewMode) {
     return (
       <div className="bg-slate-200/50 p-12 rounded-[3rem] shadow-inner border-4 border-white animate-in zoom-in-95 duration-300">
@@ -187,6 +326,13 @@ const InvoiceForm = ({
                </div>
             </div>
             <input type="text" placeholder="Buyer Name" className="w-full font-black text-md text-slate-800 outline-none uppercase" value={customer.name} onChange={(e) => handleCustomerChange("name", e.target.value)} />
+            <input 
+              type="text" 
+              placeholder="Buyer GSTIN (Optional)" 
+              className="w-full text-xs font-bold text-blue-600 bg-slate-50 rounded-xl p-4 border-none outline-none uppercase placeholder:text-blue-300" 
+              value={customer.gstin || ""} 
+              onChange={(e) => handleCustomerChange("gstin", e.target.value)} 
+            />
             <textarea placeholder="Billing Address..." className="w-full text-xs text-slate-500 bg-slate-50 rounded-2xl p-4 border-none outline-none resize-none font-medium" rows="3" value={customer.address} onChange={(e) => handleCustomerChange("address", e.target.value)} />
             <div className="space-y-1">
                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Consignee | Site Address</label>
@@ -411,12 +557,60 @@ const InvoiceForm = ({
         </div>
       </div>
 
+      {/* Internal Payment Tracking - Hidden on Print */}
+      <div className="bg-slate-900 p-8 rounded-[2.5rem] shadow-2xl flex flex-col md:flex-row gap-8 items-center justify-between border-4 border-slate-800 print:hidden no-print animate-in slide-in-from-bottom-4 duration-700">
+         <div className="flex items-center gap-6">
+            <div className="w-12 h-12 bg-blue-600 rounded-2xl flex items-center justify-center shadow-lg shadow-blue-500/20">
+               <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17 9V7a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2m2 4h10a2 2 0 002-2v-6a2 2 0 00-2-2H9a2 2 0 00-2 2v6a2 2 0 002 2zm7-5a2 2 0 11-4 0 2 2 0 014 0z"/></svg>
+            </div>
+            <div>
+               <h4 className="text-white font-black uppercase text-[10px] tracking-[0.3em]">Internal Payment Tracking</h4>
+               <p className="text-slate-400 text-[10px] font-bold italic">Mark if this invoice is paid or has a pending balance (Udhaari)</p>
+            </div>
+         </div>
+         
+         <div className="flex items-center gap-4 bg-slate-800 p-2 rounded-2xl">
+            <button 
+               type="button" 
+               onClick={() => { setPaymentStatus("paid"); setPendingAmount(0); }}
+               className={`px-8 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${paymentStatus === "paid" ? "bg-green-500 text-white shadow-lg scale-105" : "text-slate-500 hover:text-slate-400"}`}
+            >
+               Full Payment Received
+            </button>
+            <button 
+               type="button" 
+               onClick={() => setPaymentStatus("pending")}
+               className={`px-8 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${paymentStatus === "pending" ? "bg-red-500 text-white shadow-lg scale-105" : "text-slate-500 hover:text-slate-400"}`}
+            >
+               Pending / Udhaari
+            </button>
+         </div>
+
+         {paymentStatus === "pending" && (
+            <div className="bg-slate-800 p-4 rounded-2xl border border-slate-700 flex flex-col gap-1 animate-in zoom-in-95">
+               <label className="text-[8px] font-black text-slate-500 uppercase tracking-widest">Balance Amount Due</label>
+               <div className="flex items-center gap-2">
+                  <span className="text-white font-black text-sm">{currency}</span>
+                  <input 
+                     type="number" 
+                     className="bg-transparent border-none outline-none text-white font-black text-xl w-32 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none" 
+                     placeholder="0.00"
+                     value={pendingAmount}
+                     onChange={(e) => setPendingAmount(parseFloat(e.target.value) || 0)}
+                  />
+               </div>
+            </div>
+         )}
+      </div>
+
       <div className="flex flex-col md:flex-row justify-end items-center gap-6 mt-10 p-10 bg-white rounded-3xl border border-slate-100">
          <div className="flex flex-col items-end">
             <span className="text-[10px] font-black uppercase tracking-[0.3em] text-slate-400">Total Amount Payable</span>
             <span className="text-4xl font-black text-slate-900">{currency} {totals.grandTotal}</span>
          </div>
-         <button type="submit" className="w-full md:w-auto bg-slate-900 text-white font-black uppercase tracking-widest py-6 px-12 rounded-2xl hover:bg-blue-600 transition-all active:scale-95">Download PDF</button>
+         <div className="flex gap-4 w-full md:w-auto">
+            <button type="submit" className="flex-1 bg-slate-900 text-white font-black uppercase tracking-widest py-6 px-12 rounded-2xl hover:bg-blue-600 transition-all active:scale-95 shadow-xl shadow-slate-100">Download PDF</button>
+         </div>
       </div>
     </form>
   );

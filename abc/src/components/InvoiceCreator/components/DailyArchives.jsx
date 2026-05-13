@@ -1,6 +1,6 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 
-const DailyArchives = ({ currency }) => {
+const DailyArchives = ({ currency, onViewAnalytics }) => {
   const [archives, setArchives] = useState([]);
   const [selectedArchive, setSelectedArchive] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -32,6 +32,10 @@ const DailyArchives = ({ currency }) => {
       alert("Error loading details");
     }
   };
+
+  const totalLifetimeRevenue = useMemo(() => {
+    return archives.reduce((acc, curr) => acc + (parseFloat(curr.total_revenue) || 0), 0);
+  }, [archives]);
 
   if (loading) {
     return (
@@ -152,10 +156,16 @@ const DailyArchives = ({ currency }) => {
 
   return (
     <div className="space-y-10 animate-in fade-in slide-in-from-bottom-4 duration-500">
-      <div className="flex justify-between items-end">
+      <div className="flex justify-between items-end bg-white p-10 rounded-[3rem] border-2 border-slate-100 shadow-xl">
         <div>
           <h2 className="text-4xl font-black text-slate-900 tracking-tighter uppercase italic">Daily Master Archives</h2>
           <p className="text-slate-400 font-bold text-xs mt-2 uppercase tracking-widest">Historical snapshots of all transaction data</p>
+        </div>
+        <div className="text-right">
+           <p className="text-[10px] font-black text-slate-400 uppercase tracking-[0.3em] mb-2">Lifetime Total Revenue</p>
+           <h2 className="text-4xl font-black text-blue-600 tracking-tighter">
+             {currency} {totalLifetimeRevenue.toLocaleString()}
+           </h2>
         </div>
       </div>
 
@@ -200,7 +210,17 @@ const DailyArchives = ({ currency }) => {
                       </span>
                     </span>
                   </td>
-                  <td className="px-8 py-6 text-right">
+                  <td className="px-8 py-6 text-right flex items-center justify-end gap-4">
+                    <button 
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onViewAnalytics(arc);
+                      }}
+                      className="p-3 bg-blue-50 text-blue-600 rounded-xl hover:bg-blue-600 hover:text-white transition-all shadow-sm"
+                      title="Day-wise Advanced Analytics"
+                    >
+                      📊
+                    </button>
                     <button className="text-[10px] font-black text-slate-400 uppercase tracking-widest group-hover:text-blue-600 transition-colors">View Details →</button>
                   </td>
                 </tr>

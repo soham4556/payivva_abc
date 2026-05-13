@@ -1,6 +1,6 @@
 import React from "react";
 
-const PurchaseOrderHistory = ({ savedPOs, currency, setActiveTab, reprintPO, loadPO, updatePOStatus, bulkClearPOHistory }) => {
+const PurchaseOrderHistory = ({ savedPOs, currency, setActiveTab, reprintPO, loadPO, updatePOStatus, bulkClearPOHistory, handleEmailPO }) => {
   return (
     <div className="bg-white rounded-[3rem] border-2 border-slate-100 overflow-hidden shadow-2xl animate-in fade-in zoom-in-95 duration-500">
        <div className="p-10 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
@@ -73,6 +73,13 @@ const PurchaseOrderHistory = ({ savedPOs, currency, setActiveTab, reprintPO, loa
                               className="bg-blue-600 text-white p-2.5 rounded-xl hover:bg-blue-700 transition-all shadow-sm"
                             >
                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z"/></svg>
+                            </button>
+                            <button 
+                              onClick={() => handleEmailPO(po)} 
+                              title="Send Email"
+                              className="bg-emerald-600 text-white p-2.5 rounded-xl hover:bg-emerald-700 transition-all shadow-sm"
+                            >
+                               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"/></svg>
                             </button>
                          </div>
                       </td>
