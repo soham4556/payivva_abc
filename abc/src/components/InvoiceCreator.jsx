@@ -1,19 +1,60 @@
 import React, { useState, useMemo, useEffect } from "react";
+import Sidebar from "./InvoiceCreator/components/Sidebar";
+import Dashboard from "./InvoiceCreator/components/Dashboard";
+import InvoiceList from "./InvoiceCreator/components/InvoiceList";
+import CancelledInvoices from "./InvoiceCreator/components/CancelledInvoices";
+import Timeline from "./InvoiceCreator/components/Timeline";
+import Inventory from "./InvoiceCreator/components/Inventory";
+import PurchaseOrderForm from "./InvoiceCreator/components/PurchaseOrderForm";
+import PurchaseOrderHistory from "./InvoiceCreator/components/PurchaseOrderHistory";
+import InvoiceForm from "./InvoiceCreator/components/InvoiceForm";
+import TaxInvoiceTemplate from "./InvoiceCreator/templates/TaxInvoiceTemplate";
+import POTemplate from "./InvoiceCreator/templates/POTemplate";
+import Expenses from "./InvoiceCreator/components/Expenses";
+import RecycleBin from "./InvoiceCreator/components/RecycleBin";
+import Analytics from "./InvoiceCreator/components/Analytics";
+import AuditTemplate from "./InvoiceCreator/templates/AuditTemplate";
+import PaidHistory from "./InvoiceCreator/components/PaidHistory";
+import DailyArchives from "./InvoiceCreator/components/DailyArchives";
 
 const InvoiceCreator = () => {
   const [docType, setDocType] = useState("invoice");
   const [currency, setCurrency] = useState("₹");
-  const [activeTab, setActiveTab] = useState("invoices");
+  const [activeTab, setActiveTab] = useState("dashboard");
+  const [poItems, setPoItems] = useState([]);
+  const [poMeta, setPoMeta] = useState({
+    poNumber:
+      "PO/" +
+      new Date().getFullYear() +
+      "/" +
+      Math.floor(Math.random() * 1000)
+        .toString()
+        .padStart(3, "0"),
+    poDate: new Date().toISOString().split("T")[0],
+    vendor: "",
+    address: "",
+    gstin: "",
+  });
   const [selectedTemplate, setSelectedTemplate] = useState("modern");
   const [isPreviewMode, setIsPreviewMode] = useState(false);
+  const [isPOPrinting, setIsPOPrinting] = useState(false);
+  const [activePOSearchId, setActivePOSearchId] = useState(null);
   const [showAnnexure, setShowAnnexure] = useState(false);
-  
-
+  const [editingPOId, setEditingPOId] = useState(null);
+  const [isClearingHistory, setIsClearingHistory] = useState(false);
+  const [clearProgress, setClearProgress] = useState({ current: 0, total: 0 });
+  const [expenses, setExpenses] = useState([]);
+  const [revenueLogs, setRevenueLogs] = useState([]);
+  const [isAuditPrinting, setIsAuditPrinting] = useState(false);
+  const [auditReportData, setAuditReportData] = useState([]);
+  const [auditTimeframe, setAuditTimeframe] = useState("monthly");
 
   const [invoiceMeta, setInvoiceMeta] = useState({
     invoiceNumber: "INV/2026/042",
     issueDate: new Date().toISOString().split("T")[0],
-    dueDate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().split("T")[0],
+    dueDate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000)
+      .toISOString()
+      .split("T")[0],
     poNumber: "PO-BMI-9921",
     poDate: "2026-05-10",
     transport: "By Road",
@@ -22,12 +63,13 @@ const InvoiceCreator = () => {
     dispatchThrough: "",
     validity: "15 Days",
     state: "Maharashtra",
-    stateCode: "27"
+    stateCode: "27",
   });
 
   const [myBusiness, setMyBusiness] = useState({
     name: "PAYIVVA TECHNOLOGIES (OPC) PRIVATE LIMITED",
-    address: "House no.105, Green Park - Venkatesh Properties, Undri Pune City, MAHARASHTRA, 411060",
+    address:
+      "House no.105, Green Park - Venkatesh Properties, Undri Pune City, MAHARASHTRA, 411060",
     phone: "8287958096",
     email: "info@payivva.com",
     website: "www.payivvatechnologies.in",
@@ -38,28 +80,40 @@ const InvoiceCreator = () => {
     ifscCode: "ICIC000123",
     branch: "Undri, Pune",
     logo: "/logo.png",
-    signature: "/digital_sign.png"
+    signature: "/digital_sign.png",
   });
 
   const [terms, setTerms] = useState([
     "Payment in favor of PAYIVVA TECHNOLOGIES (OPC) PRIVATE LIMITED",
     "Interest @ 24% for delayed payment.",
-    "Subject to Pune Jurisdiction only."
+    "Subject to Pune Jurisdiction only.",
   ]);
 
-  const [taxType, setTaxType] = useState("igst"); // Default to IGST as per current layout
-
+  const [taxType, setTaxType] = useState("igst");
   const [customer, setCustomer] = useState({
     name: "",
     address: "",
     gstin: "",
     site: "",
     contactPerson: "",
-    phone: ""
+    phone: "",
   });
-
   const [discountPercent, setDiscountPercent] = useState(0);
-
+  const [savedInvoices, setSavedInvoices] = useState([]);
+  const [clients, setClients] = useState([]);
+  const [products, setProducts] = useState([]);
+  const [inventoryForm, setInventoryForm] = useState({
+    name: "",
+    hsn: "",
+    make: "",
+    price: "",
+    stock: 0,
+    min_stock: 5,
+  });
+  const [editingProductId, setEditingProductId] = useState(null);
+  const [savedPOs, setSavedPOs] = useState([]);
+  const [inventorySearch, setInventorySearch] = useState("");
+  const [isLoading, setIsLoading] = useState(false);
   const [items, setItems] = useState([
     {
       id: Date.now(),
@@ -71,70 +125,793 @@ const InvoiceCreator = () => {
       taxRate: 18,
     },
   ]);
-
-  const [annexureItems, setAnnexureItems] = useState([
-    { id: Date.now(), name: "", hsn: "", make: "", quantity: 1, price: 0 }
+  const [annexures, setAnnexures] = useState([
+    {
+      id: Date.now(),
+      title: "Annexure - A",
+      items: [
+        {
+          id: Date.now() + 1,
+          name: "",
+          make: "",
+          quantity: 1,
+          price: 0,
+          taxRate: 18,
+        },
+      ],
+    },
   ]);
+
+  // API Methods
+  const fetchInvoices = async () => {
+    setIsLoading(true);
+    try {
+      const response = await fetch("/api/invoices");
+      const data = await response.json();
+      setSavedInvoices(data);
+    } catch (err) {
+      console.error("Error fetching invoices:", err);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const fetchClients = async () => {
+    try {
+      const response = await fetch("/api/clients");
+      const data = await response.json();
+      setClients(data);
+    } catch (err) {
+      console.error("Error fetching clients:", err);
+    }
+  };
+
+  const fetchProducts = async () => {
+    try {
+      const response = await fetch("/api/products");
+      const data = await response.json();
+      setProducts(data);
+    } catch (err) {
+      console.error("Error fetching products:", err);
+    }
+  };
+
+  const fetchExpenses = async () => {
+    try {
+      const response = await fetch("/api/expenses");
+      const data = await response.json();
+      setExpenses(data);
+    } catch (err) {
+      console.error("Error fetching expenses:", err);
+    }
+  };
+
+  const fetchRevenue = async () => {
+    try {
+      const response = await fetch("/api/revenue");
+      const data = await response.json();
+      setRevenueLogs(data);
+    } catch (err) {
+      console.error("Error fetching revenue:", err);
+    }
+  };
+
+  const fetchPOs = async () => {
+    try {
+      const response = await fetch("/api/purchase_orders");
+      if (response.ok) {
+        const data = await response.json();
+        setSavedPOs(data);
+      }
+    } catch (err) {
+      console.error("Error fetching POs:", err);
+    }
+  };
+
+  useEffect(() => {
+    fetchInvoices();
+    fetchClients();
+    fetchProducts();
+    fetchExpenses();
+    fetchPOs();
+    fetchRevenue();
+
+    // Auto-Purge Recycle Bin Check
+    const checkAutoPurge = async () => {
+      const now = new Date();
+      const hours = now.getHours();
+      const minutes = now.getMinutes();
+
+      // If it's between 12:00 AM and 12:10 AM, trigger the purge
+      if (hours === 0 && minutes <= 10) {
+        try {
+          await fetch("/api/recycle-bin/purge", { method: "POST" });
+          console.log("♻️ Midnight Auto-Purge Complete");
+        } catch (e) {
+          console.error("Auto-purge failed", e);
+        }
+      }
+    };
+    checkAutoPurge();
+  }, []);
+
+  useEffect(() => {
+    if (activeTab === "purchase_orders" && poItems.length === 0) {
+      const lowStock = products.filter((p) => p.stock <= 50);
+      if (lowStock.length > 0) {
+        setPoItems(
+          lowStock.map((p) => ({
+            id: Date.now() + Math.random(),
+            name: p.name,
+            hsn: p.hsn || "",
+            make: p.make || "",
+            quantity: 1,
+            price: parseFloat(p.price) || 0,
+            taxRate: parseFloat(p.tax_rate) || 18,
+          })),
+        );
+      }
+    }
+  }, [activeTab, products]);
+
+  const saveClientToDB = async () => {
+    try {
+      const response = await fetch("/api/clients", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(customer),
+      });
+      if (response.ok) {
+        alert("Client saved to database!");
+        fetchClients();
+      }
+    } catch (err) {
+      console.error("Error saving client:", err);
+    }
+  };
+
+  const deleteClient = async (id) => {
+    if (!window.confirm("🗑️ Are you sure you want to delete this saved client?"))
+      return;
+    try {
+      const response = await fetch(`/api/clients/${id}`, { method: "DELETE" });
+      if (response.ok) {
+        fetchClients();
+        setCustomer({
+          name: "",
+          address: "",
+          gstin: "",
+          site: "",
+          phone: "",
+          email: "",
+          state: "Maharashtra",
+        });
+        alert("Client deleted successfully!");
+      }
+    } catch (err) {
+      console.error("Error deleting client:", err);
+    }
+  };
+
+  const selectClient = (client) => {
+    if (!client) return;
+    setCustomer({
+      name: client.name || "",
+      address: client.address || "",
+      gstin: client.gst || "",
+      site: client.site || "",
+      phone: client.phone || "",
+      email: client.email || "",
+      state: client.state || "Maharashtra",
+    });
+  };
+
+  const selectProduct = (itemId, product) => {
+    if (product.stock <= 0)
+      alert(`⚠️ STOCK ALERT: "${product.name.toUpperCase()}" is OUT OF STOCK!`);
+    else if (product.stock <= 50)
+      alert(
+        `💡 LOW STOCK: Only ${product.stock} items left for "${product.name.toUpperCase()}".`,
+      );
+
+    setItems((prevItems) =>
+      prevItems.map((item) =>
+        item.id === itemId
+          ? {
+              ...item,
+              name: product.name,
+              hsn: product.hsn || "",
+              make: product.make || "",
+              price: parseFloat(product.price) || 0,
+              taxRate: parseFloat(product.tax_rate) || 18,
+              stockHint: product.stock,
+            }
+          : item,
+      ),
+    );
+  };
+
+  const selectAnnexureProduct = (sectionId, itemId, product) => {
+    if (product.stock <= 0)
+      alert(`⚠️ STOCK ALERT: "${product.name.toUpperCase()}" is OUT OF STOCK!`);
+    setAnnexures(
+      annexures.map((ann) =>
+        ann.id === sectionId
+          ? {
+              ...ann,
+              items: ann.items.map((i) =>
+                i.id === itemId
+                  ? {
+                      ...i,
+                      name: product.name,
+                      make: product.make || "",
+                      price: parseFloat(product.price) || 0,
+                      taxRate: parseFloat(product.tax_rate) || 18,
+                    }
+                  : i,
+              ),
+            }
+          : ann,
+      ),
+    );
+  };
+
+  const deleteProduct = async (id) => {
+    if (!window.confirm("Are you sure you want to delete this product?"))
+      return;
+    try {
+      const res = await fetch(`/api/products/${id}`, { method: "DELETE" });
+      if (res.ok) fetchProducts();
+    } catch (err) {
+      console.error("Error deleting product:", err);
+    }
+  };
+
+  const startEditProduct = (product) => {
+    setEditingProductId(product.id);
+    setInventoryForm({
+      name: product.name,
+      hsn: product.hsn,
+      make: product.make,
+      price: product.price,
+      stock: product.stock,
+      min_stock: product.min_stock,
+    });
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  };
+
+  const cancelEdit = () => {
+    setEditingProductId(null);
+    setInventoryForm({
+      name: "",
+      hsn: "",
+      make: "",
+      price: "",
+      stock: 0,
+      min_stock: 5,
+    });
+  };
+
+  const saveOrUpdateProduct = async () => {
+    if (!inventoryForm.name) return alert("Product name is required!");
+    try {
+      const url = editingProductId
+        ? `/api/products/${editingProductId}`
+        : "/api/products";
+      const method = editingProductId ? "PUT" : "POST";
+      const res = await fetch(url, {
+        method,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ...inventoryForm, tax_rate: 18 }),
+      });
+      if (res.ok) {
+        fetchProducts();
+        cancelEdit();
+        alert("Product saved/updated successfully!");
+      }
+    } catch (err) {
+      console.error("Save error:", err);
+    }
+  };
+
+  const updateStatus = async (id, newStatus) => {
+    const currentInvoice = savedInvoices.find((inv) => inv.id === id);
+    const oldStatus = currentInvoice ? currentInvoice.status : "";
+    let finalStatus = newStatus;
+
+    if (newStatus === "paid") {
+      if (!window.confirm("✅ Mark as PAID? (This will deduct STOCK)")) return;
+
+      const shouldArchive = window.confirm(
+        "📁 Move this to 'Paid History' Archives?\n\n(Yes = Move to Paid Section, No = Keep in Active History)",
+      );
+      if (shouldArchive) {
+        finalStatus = "paid_archived";
+      }
+    } else if (
+      (oldStatus === "paid" || oldStatus === "paid_archived") &&
+      (newStatus === "pending" || newStatus === "active")
+    ) {
+      alert(
+        "♻️ Status changed back to PENDING. Stock will be RESTORED and Revenue record will be removed.",
+      );
+    }
+
+    try {
+      const response = await fetch(`/api/invoices/${id}/status`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status: finalStatus }),
+      });
+      if (response.ok) {
+        fetchInvoices();
+        fetchProducts();
+        fetchRevenue();
+      }
+    } catch (err) {
+      console.error("Error updating status:", err);
+    }
+  };
+
+  const reprintPO = (po) => {
+    setPoMeta({
+      poNumber: po.po_number,
+      poDate: po.po_date,
+      vendor: po.vendor_name,
+    });
+    setPoItems(JSON.parse(po.items));
+    setIsPOPrinting(true);
+    setTimeout(() => {
+      window.print();
+      setIsPOPrinting(false);
+    }, 500);
+  };
+
+  const loadPO = (po) => {
+    setPoMeta({
+      poNumber: po.po_number,
+      poDate: po.po_date,
+      vendor: po.vendor_name,
+    });
+    setPoItems(JSON.parse(po.items));
+    setEditingPOId(po.id);
+    setActiveTab("purchase_orders");
+    setIsPreviewMode(false);
+  };
+
+  const updatePOStatus = async (id, newStatus) => {
+    if (newStatus === "received") {
+      if (
+        !window.confirm(
+          "📦 Marking as RECEIVED will automatically ADD these items to your Inventory Stock. Proceed?",
+        )
+      )
+        return;
+    }
+    try {
+      const response = await fetch(`/api/purchase_orders/${id}/status`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status: newStatus }),
+      });
+      if (response.ok) {
+        alert(`✅ Status updated to ${newStatus.toUpperCase()}`);
+        fetchPOs();
+        if (newStatus === "received") fetchProducts(); // Refresh stock
+      }
+    } catch (err) {
+      console.error("Error updating PO status:", err);
+    }
+  };
+
+  const bulkClearPOHistory = async () => {
+    if (savedPOs.length === 0) return alert("No history to move!");
+    if (
+      !window.confirm(
+        `⚠️ Move all ${savedPOs.length} Purchase Orders to the Recycle Bin?`,
+      )
+    )
+      return;
+
+    setIsClearingHistory(true);
+    try {
+      const res = await fetch("/api/purchase_orders/bulk-trash", {
+        method: "POST",
+      });
+      const result = await res.json();
+      if (result.success) {
+        setSavedPOs([]);
+        alert("✅ SUCCESS: All POs moved to Recycle Bin.");
+        fetchPOs();
+      } else {
+        alert("❌ Error: " + (result.error || "Failed to move records"));
+      }
+    } catch (err) {
+      console.error("Bulk clear error:", err);
+      alert("❌ Operation Failed.");
+    } finally {
+      setIsClearingHistory(false);
+    }
+  };
+
+  const cancelInvoice = async (id) => {
+    if (!window.confirm("♻️ Cancel this invoice? This will RESTORE STOCK and REMOVE REVENUE from Analytics.")) return;
+    try {
+      const response = await fetch(`/api/invoices/${id}/status`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status: "cancelled" }),
+      });
+      if (response.ok) {
+        fetchInvoices();
+        fetchProducts();
+        fetchRevenue();
+        alert("✅ Invoice Cancelled! Stock restored and Revenue removed.");
+      }
+    } catch (err) {
+      console.error("Error cancelling invoice:", err);
+    }
+  };
+
+  const deleteInvoice = async (id) => {
+    if (!window.confirm("🗑️ Move to Recycle Bin? Stock will NOT be affected."))
+      return;
+    try {
+      const response = await fetch(`/api/invoices/${id}?restore=false`, {
+        method: "DELETE",
+      });
+      const result = await response.json();
+      if (result.success) {
+        fetchInvoices();
+        fetchRevenue();
+        alert("🗑️ Entry moved to Recycle Bin.");
+      }
+    } catch (err) {
+      console.error("Error moving to trash:", err);
+    }
+  };
+
+  const permanentDeleteInvoice = async (id) => {
+    if (
+      !window.confirm(
+        "⚠️ PERMANENT DELETE: This record will be erased forever from the database. This action cannot be undone. Proceed?",
+      )
+    )
+      return;
+    try {
+      const response = await fetch(`/api/invoices/${id}?permanent=true`, {
+        method: "DELETE",
+      });
+      const result = await response.json();
+      if (result.success) {
+        fetchInvoices();
+        fetchProducts();
+        fetchRevenue();
+        alert("✅ Record permanently deleted.");
+      } else alert("❌ Error: " + (result.error || "Failed to delete"));
+    } catch (err) {
+      console.error("Error deleting invoice:", err);
+    }
+  };
+
+  const clearForm = () => {
+    if (!window.confirm("🧹 Are you sure you want to clear the screen?"))
+      return;
+    resetFormOnly();
+  };
+
+  const resetFormOnly = () => {
+    setDocType("invoice");
+    setInvoiceMeta({
+      invoiceNumber:
+        "INV/" +
+        new Date().getFullYear() +
+        "/" +
+        Math.floor(Math.random() * 1000)
+          .toString()
+          .padStart(3, "0"),
+      issueDate: new Date().toISOString().split("T")[0],
+      dueDate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000)
+        .toISOString()
+        .split("T")[0],
+      poNumber: "",
+      poDate: "",
+      transport: "By Road",
+      vehicleNumber: "",
+      lrNumber: "",
+      dispatchThrough: "",
+      validity: "15 Days",
+      state: "Maharashtra",
+      stateCode: "27",
+    });
+    setCustomer({
+      name: "",
+      address: "",
+      phone: "",
+      email: "",
+      gstin: "",
+      state: "Maharashtra",
+      site: "",
+    });
+    setItems([
+      {
+        id: Date.now(),
+        name: "",
+        hsn: "",
+        quantity: 1,
+        price: 0,
+        taxRate: 18,
+        make: "",
+      },
+    ]);
+    setAnnexures([]);
+    setShowAnnexure(false);
+    setIsPreviewMode(false);
+  };
+
+  const bulkClearHistory = async () => {
+    if (savedInvoices.length === 0) return alert("No records to move!");
+
+    if (
+      !window.confirm(
+        `⚠️ Are you sure? All ${savedInvoices.length} invoices will be moved to the Recycle Bin. You can restore them later.`,
+      )
+    )
+      return;
+
+    setIsClearingHistory(true);
+    try {
+      const res = await fetch("/api/invoices/bulk-trash", { method: "POST" });
+      const result = await res.json();
+      if (result.success) {
+        setSavedInvoices([]);
+        alert(`✅ SUCCESS: All invoices moved to Recycle Bin.`);
+        fetchInvoices();
+      } else {
+        alert("❌ Error: " + (result.error || "Failed to move records"));
+      }
+    } catch (err) {
+      console.error("Archival Error:", err);
+      alert(`❌ Error: ${err.message}`);
+    } finally {
+      setIsClearingHistory(false);
+      resetFormOnly();
+    }
+  };
+
+  const bulkClearExpenses = async () => {
+    if (expenses.length === 0) return alert("No expenses to move!");
+    if (
+      !window.confirm(
+        `⚠️ Move all ${expenses.length} expenses to the Recycle Bin?`,
+      )
+    )
+      return;
+
+    setIsClearingHistory(true);
+    try {
+      const res = await fetch("/api/expenses/bulk-trash", { method: "POST" });
+      const result = await res.json();
+      if (result.success) {
+        setExpenses([]);
+        alert("✅ SUCCESS: All expenses moved to Recycle Bin.");
+        fetchExpenses();
+      } else {
+        alert("❌ Error: " + (result.error || "Failed to move records"));
+      }
+    } catch (err) {
+      console.error("Bulk clear error:", err);
+      alert("❌ Operation Failed.");
+    } finally {
+      setIsClearingHistory(false);
+    }
+  };
+
+  const handleMasterReset = async () => {
+    if (
+      !window.confirm(
+        "🚨 DANGER: This will PERMANENTLY DELETE all Invoices, Revenue Logs, Expenses, and PO History.\n\nEverything will be reset to 0. Stock will NOT be affected. Proceed?",
+      )
+    )
+      return;
+    if (
+      !window.confirm(
+        "⚠️ FINAL WARNING: This action CANNOT BE UNDONE. Are you absolutely sure?",
+      )
+    )
+      return;
+
+    try {
+      const res = await fetch("/api/system/master-reset", { method: "POST" });
+      const result = await res.json();
+      if (result.success) {
+        alert("✅ System Reset Successful. Everything is now at 0.");
+        window.location.reload();
+      } else {
+        alert("❌ Error: " + result.error);
+      }
+    } catch (err) {
+      console.error(err);
+      alert("❌ Reset Failed.");
+    }
+  };
+
+  const handleAnalyticsReset = async () => {
+    if (
+      !window.confirm(
+        "⚠️ DANGER: This will PERMANENTLY DELETE all Analytics, Life-time Sales, and Dashboard Revenue history.\n\nEverything will be wiped clean to 0. This cannot be undone. Proceed?"
+      )
+    )
+      return;
+
+    if (!window.confirm("🔥 FINAL CONFIRMATION: Are you absolutely sure?")) return;
+
+    try {
+      const res = await fetch("/api/system/analytics-reset", { method: "POST" });
+      const result = await res.json();
+      if (result.success) {
+        alert("✅ Analytics Reset Successful. Dashboard is now at 0.");
+        window.location.reload();
+      } else {
+        alert("❌ Error: " + result.error);
+      }
+    } catch (err) {
+      console.error(err);
+      alert("❌ Reset Failed.");
+    }
+  };
+
+  const loadInvoice = (invoice) => {
+    const data = JSON.parse(invoice.data);
+    setInvoiceMeta(data.invoiceMeta);
+    setCustomer(data.customer);
+    setItems(data.items);
+    if (data.annexures) setAnnexures(data.annexures);
+    else if (data.annexureItems)
+      setAnnexures([
+        { id: Date.now(), title: "Annexure - A", items: data.annexureItems },
+      ]);
+    setDocType(data.docType);
+    setTerms(data.terms || []);
+    setTaxType(data.taxType || "gst");
+    setActiveTab("invoices");
+    setIsPreviewMode(true);
+  };
 
   const addItem = () =>
     setItems([
       ...items,
-      { id: Date.now(), name: "", hsn: "", make: "", quantity: 1, price: 0, taxRate: 18 },
+      {
+        id: Date.now(),
+        name: "",
+        hsn: "",
+        make: "",
+        quantity: 1,
+        price: 0,
+        taxRate: 18,
+      },
     ]);
   const removeItem = (id) => setItems(items.filter((item) => item.id !== id));
+  const handleItemChange = (id, field, value) =>
+    setItems(
+      items.map((item) =>
+        item.id === id ? { ...item, [field]: value } : item,
+      ),
+    );
 
-  const addAnnexureItem = () =>
-    setAnnexureItems([
-      ...annexureItems,
-      { id: Date.now(), name: "", hsn: "", make: "", quantity: 1, price: 0 },
+  const addAnnexureSection = () => {
+    const nextLetter = String.fromCharCode(65 + annexures.length);
+    setAnnexures([
+      ...annexures,
+      {
+        id: Date.now(),
+        title: `Annexure - ${nextLetter}`,
+        items: [
+          {
+            id: Date.now() + 1,
+            name: "",
+            make: "",
+            quantity: 1,
+            price: 0,
+            taxRate: 18,
+          },
+        ],
+      },
     ]);
-  const removeAnnexureItem = (id) => setAnnexureItems(annexureItems.filter((item) => item.id !== id));
-
-  const handleItemChange = (id, field, value) => {
-    setItems(items.map((item) => item.id === id ? { ...item, [field]: value } : item));
   };
 
-  const handleAnnexureItemChange = (id, field, value) => {
-    setAnnexureItems(annexureItems.map((item) => item.id === id ? { ...item, [field]: value } : item));
+  const removeAnnexureSection = (sectionId) => {
+    if (annexures.length > 1)
+      setAnnexures(annexures.filter((a) => a.id !== sectionId));
   };
 
-  const annexureTotal = useMemo(() => {
-    return annexureItems.reduce((acc, item) => acc + (item.quantity * item.price), 0).toLocaleString(undefined, {minimumFractionDigits: 2});
-  }, [annexureItems]);
+  const addAnnexureItem = (sectionId) => {
+    setAnnexures(
+      annexures.map((ann) =>
+        ann.id === sectionId
+          ? {
+              ...ann,
+              items: [
+                ...ann.items,
+                {
+                  id: Date.now(),
+                  name: "",
+                  make: "",
+                  quantity: 1,
+                  price: 0,
+                  taxRate: 18,
+                },
+              ],
+            }
+          : ann,
+      ),
+    );
+  };
 
-  const handleMetaChange = (field, value) => setInvoiceMeta({ ...invoiceMeta, [field]: value });
-  const handleCustomerChange = (field, value) => setCustomer({ ...customer, [field]: value });
-  const handleBusinessChange = (field, value) => setMyBusiness({ ...myBusiness, [field]: value });
+  const removeAnnexureItem = (sectionId, itemId) => {
+    setAnnexures(
+      annexures.map((ann) =>
+        ann.id === sectionId
+          ? { ...ann, items: ann.items.filter((i) => i.id !== itemId) }
+          : ann,
+      ),
+    );
+  };
 
-  const getDocTypeDisplayName = () => {
-    switch (docType) {
-      case "invoice": return "TAX INVOICE";
-      case "quotation": return "QUOTATION";
-      case "proforma": return "PROFORMA INVOICE";
-      case "delivery_challan": return "DELIVERY CHALLAN";
-      case "work_order": return "WORK ORDER";
-      default: return "DOCUMENT";
-    }
+  const handleAnnexureItemChange = (sectionId, itemId, field, value) => {
+    setAnnexures(
+      annexures.map((ann) =>
+        ann.id === sectionId
+          ? {
+              ...ann,
+              items: ann.items.map((i) =>
+                i.id === itemId ? { ...i, [field]: value } : i,
+              ),
+            }
+          : ann,
+      ),
+    );
+  };
+
+  const handleAnnexureTitleChange = (sectionId, title) =>
+    setAnnexures(
+      annexures.map((ann) => (ann.id === sectionId ? { ...ann, title } : ann)),
+    );
+
+  const syncAnnexureToMain = (section) => {
+    const taxableTotal = section.items.reduce(
+      (acc, item) => acc + item.quantity * item.price,
+      0,
+    );
+    setItems([
+      ...items,
+      {
+        id: Date.now(),
+        name: `${section.title.toUpperCase()} (AS PER ANNEXURE)`,
+        hsn: "AS PER BOQ",
+        make: "MULTIPLE",
+        quantity: 1,
+        price: taxableTotal,
+        taxRate: 18,
+      },
+    ]);
+    alert(`✅ ${section.title} added to Main Invoice!`);
   };
 
   const totals = useMemo(() => {
-    let subtotal = 0;
-    let totalTax = 0;
+    let subtotal = 0,
+      totalTax = 0;
     items.forEach((item) => {
       subtotal += item.quantity * item.price;
     });
     const discountAmount = subtotal * (discountPercent / 100);
     const taxableAmount = subtotal - discountAmount;
-    
     items.forEach((item) => {
       const itemTotal = item.quantity * item.price;
       const itemRatio = subtotal > 0 ? itemTotal / subtotal : 0;
-      const itemTaxable = taxableAmount * itemRatio;
-      totalTax += itemTaxable * (item.taxRate / 100);
+      totalTax += taxableAmount * itemRatio * (item.taxRate / 100);
     });
-
     const grandTotal = taxableAmount + totalTax;
-
     return {
       subtotal: Number(subtotal).toFixed(2),
       discountAmount: Number(discountAmount).toFixed(2),
@@ -145,617 +922,541 @@ const InvoiceCreator = () => {
       totalTax: Number(totalTax).toFixed(2),
       grandTotal: Number(grandTotal).toFixed(2),
       grandTotalInt: Math.round(grandTotal),
-      totalQty: items.reduce((sum, item) => sum + Number(item.quantity || 0), 0)
+      totalQty: items.reduce(
+        (sum, item) => sum + Number(item.quantity || 0),
+        0,
+      ),
     };
   }, [items, discountPercent]);
 
-  useEffect(() => {
-    const docTitle = isPreviewMode 
-      ? `${customer.name} - ${getDocTypeDisplayName()} - ${invoiceMeta.invoiceNumber}`
-      : "Payivva | Invoice Creator";
-    document.title = docTitle;
-  }, [customer.name, invoiceMeta.invoiceNumber, docType, isPreviewMode]);
-
   const numberToWords = (num) => {
-    const a = ['', 'One ', 'Two ', 'Three ', 'Four ', 'Five ', 'Six ', 'Seven ', 'Eight ', 'Nine ', 'Ten ', 'Eleven ', 'Twelve ', 'Thirteen ', 'Fourteen ', 'Fifteen ', 'Sixteen ', 'Seventeen ', 'Eighteen ', 'Nineteen '];
-    const b = ['', '', 'Twenty', 'Thirty', 'Forty', 'Fifty', 'Sixty', 'Seventy', 'Eighty', 'Ninety'];
-    
+    const a = [
+      "",
+      "One ",
+      "Two ",
+      "Three ",
+      "Four ",
+      "Five ",
+      "Six ",
+      "Seven ",
+      "Eight ",
+      "Nine ",
+      "Ten ",
+      "Eleven ",
+      "Twelve ",
+      "Thirteen ",
+      "Fourteen ",
+      "Fifteen ",
+      "Sixteen ",
+      "Seventeen ",
+      "Eighteen ",
+      "Nineteen ",
+    ];
+    const b = [
+      "",
+      "",
+      "Twenty",
+      "Thirty",
+      "Forty",
+      "Fifty",
+      "Sixty",
+      "Seventy",
+      "Eighty",
+      "Ninety",
+    ];
     const inWords = (n) => {
       if (n < 20) return a[n];
-      if (n < 100) return b[Math.floor(n / 10)] + (n % 10 !== 0 ? ' ' + a[n % 10] : '');
-      if (n < 1000) return a[Math.floor(n / 100)] + 'Hundred ' + (n % 100 !== 0 ? inWords(n % 100) : '');
-      if (n < 100000) return inWords(Math.floor(n / 1000)) + 'Thousand ' + (n % 1000 !== 0 ? inWords(n % 1000) : '');
-      if (n < 10000000) return inWords(Math.floor(n / 100000)) + 'Lakh ' + (n % 100000 !== 0 ? inWords(n % 100000) : '');
-      return '';
-    };
-    
-    return inWords(Math.floor(num)) + 'Only';
-  };
-
-  const handleSubmit = (e) => {
-    if (e) e.preventDefault();
-    setTimeout(() => { window.print(); }, 200);
-  };
-
-  const templates = [
-    { id: "modern", name: "Proper GST", desc: "Industrial Tax Invoice", icon: "🧾" },
-    { id: "classic", name: "Classic", desc: "Corporate Layout", icon: "🏛️" },
-    { id: "minimal", name: "Minimal", desc: "Modern Clean", icon: "📄" },
-    { id: "colorful", name: "Colorful", desc: "Creative SaaS", icon: "🎨" },
-  ];
-
-  const renderPrintTemplate = () => {
-    const logoImg = <img src={myBusiness.logo} alt="Logo" className="h-16 w-auto object-contain" />;
-    const signImg = <img src={myBusiness.signature} alt="Sign" className="h-16 w-auto object-contain mx-auto" />;
-
-    const commonClasses = "bg-white text-slate-900 font-sans print:p-0";
-    const templateWidth = "w-[210mm] min-h-[297mm] mx-auto";
-
-    switch (selectedTemplate) {
-      case "modern":
+      if (n < 100)
+        return b[Math.floor(n / 10)] + (n % 10 !== 0 ? " " + a[n % 10] : "");
+      if (n < 1000)
         return (
-          <div className={`${commonClasses} ${templateWidth} p-10 border border-slate-300 print:border-none shadow-lg print:shadow-none`}>
-            {/* Header */}
-            <div className="flex justify-between items-start border-b-2 border-slate-900 pb-10 mb-10">
-              <div className="flex gap-6">
-                {logoImg}
-                <div>
-                  <h1 className="text-xl font-black leading-tight uppercase">{myBusiness.name}</h1>
-                  <p className="max-w-md mt-2 text-[10px] leading-relaxed">{myBusiness.address}</p>
-                  <p className="font-bold mt-2 text-[11px]">GSTIN: {myBusiness.gstin} | PAN: {myBusiness.pan}</p>
-                </div>
-              </div>
-              <div className="text-right">
-                <h2 className="text-3xl font-black tracking-tighter text-slate-900 mb-2 uppercase">{getDocTypeDisplayName()}</h2>
-                <span className="border-2 border-slate-900 px-3 py-1 text-[10px] font-black uppercase">Original for Recipient</span>
-              </div>
-            </div>
-
-            {/* Info Grid */}
-            <div className="grid grid-cols-2 border-2 border-slate-900 mb-10 text-[10px]">
-              <div className="border-r-2 border-slate-900 p-4 space-y-2">
-                <p className="font-black uppercase text-slate-400 text-[8px] tracking-widest border-b pb-1 mb-2">Details of Buyer | Billed To:</p>
-                <p className="text-sm font-black uppercase">{customer.name}</p>
-                <p className="leading-relaxed">{customer.address}</p>
-                <p className="font-bold text-[11px] mt-2">GSTIN: {customer.gstin}</p>
-              </div>
-              <div className="p-4 grid grid-cols-2 gap-x-4 gap-y-3">
-                <div className="col-span-2 font-black uppercase text-slate-400 text-[8px] tracking-widest border-b pb-1 mb-1">Invoice Details:</div>
-                <div className="font-bold">Invoice No:</div><div className="font-black">{invoiceMeta.invoiceNumber}</div>
-                <div className="font-bold">Dated:</div><div className="font-black">{invoiceMeta.issueDate}</div>
-                {docType !== "quotation" && <><div className="font-bold">PO No:</div><div className="font-black">{invoiceMeta.poNumber}</div></>}
-                <div className="font-bold">Transport:</div><div className="font-black">{invoiceMeta.transport}</div>
-                <div className="font-bold">Vehicle No:</div><div className="font-black">{invoiceMeta.vehicleNumber}</div>
-                {invoiceMeta.lrNumber && <><div className="font-bold">LR No:</div><div className="font-black">{invoiceMeta.lrNumber}</div></>}
-                {docType === "quotation" && <><div className="font-bold">Validity:</div><div className="font-black text-blue-600">{invoiceMeta.validity}</div></>}
-              </div>
-            </div>
-
-            {customer.site && (
-              <div className="border-2 border-slate-900 mb-10 p-4 text-[10px]">
-                 <p className="font-black uppercase text-slate-400 text-[8px] tracking-widest border-b pb-1 mb-2">Consignee | Site Address:</p>
-                 <p className="font-bold italic text-[11px]">{customer.site}</p>
-              </div>
-            )}
-
-            {/* Compact Table */}
-            <table className="w-full border-collapse border-2 border-slate-900 text-[10px] mb-10">
-              <thead>
-                <tr className="border-b-2 border-slate-900 font-black uppercase tracking-wider">
-                  <th className="border-r-2 border-slate-900 p-3 text-center w-12">Sr.</th>
-                  <th className="border-r-2 border-slate-900 p-3 text-left">Description of Goods</th>
-                  <th className="border-r-2 border-slate-900 p-3 text-center w-24">HSN/SAC</th>
-                  <th className="border-r-2 border-slate-900 p-3 text-center w-20">Make</th>
-                  <th className="border-r-2 border-slate-900 p-3 text-center w-16">Qty</th>
-                  {docType !== "delivery_challan" && (
-                    <>
-                      <th className="border-r-2 border-slate-900 p-3 text-center w-16">Tax%</th>
-                      <th className="border-r-2 border-slate-900 p-3 text-right w-28">Price</th>
-                      <th className="p-3 text-right w-32">Total</th>
-                    </>
-                  )}
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-300">
-                {items.map((item, i) => (
-                  <tr key={item.id}>
-                    <td className="border-r-2 border-slate-900 p-3 text-center font-bold">{i + 1}</td>
-                    <td className="border-r-2 border-slate-900 p-3 font-black uppercase leading-tight">{item.name}</td>
-                    <td className="border-r-2 border-slate-900 p-3 text-center font-bold">{item.hsn}</td>
-                    <td className="border-r-2 border-slate-900 p-3 text-center font-bold">{item.make}</td>
-                    <td className="border-r-2 border-slate-900 p-3 text-center font-bold">{item.quantity}</td>
-                    {docType !== "delivery_challan" && (
-                      <>
-                        <td className="border-r-2 border-slate-900 p-3 text-center font-bold">{item.taxRate}%</td>
-                        <td className="border-r-2 border-slate-900 p-3 text-right font-bold">{item.price.toLocaleString(undefined, {minimumFractionDigits: 2})}</td>
-                        <td className="p-3 text-right font-black">{(item.quantity * item.price).toLocaleString(undefined, {minimumFractionDigits: 2})}</td>
-                      </>
-                    )}
-                  </tr>
-                ))}
-              </tbody>
-              <tfoot className="border-t-2 border-slate-900 bg-slate-50 font-black uppercase text-[9px]">
-                <tr>
-                  <td colSpan="4" className="border-r-2 border-slate-900 p-3 text-right">
-                    {docType === "delivery_challan" ? "Total Quantity" : "Total Before Tax"}
-                  </td>
-                  <td className="border-r-2 border-slate-900 p-3 text-center">{totals.totalQty}</td>
-                  {docType !== "delivery_challan" && (
-                    <>
-                      <td className="border-r-2 border-slate-900"></td>
-                      <td className="border-r-2 border-slate-900"></td>
-                      <td className="p-3 text-right text-[11px]">{totals.subtotal}</td>
-                    </>
-                  )}
-                </tr>
-              </tfoot>
-            </table>
-
-            {/* Summary Section - AVOID SPLIT */}
-            <div className="mt-12 grid grid-cols-2 gap-10 print:break-inside-avoid">
-              <div className="space-y-6 text-[10px]">
-                <div className="border-2 border-slate-900 p-6 rounded-[2rem] h-fit bg-white shadow-sm">
-                  <p className="font-black uppercase text-[9px] text-slate-400 mb-4 border-b border-slate-100 pb-2 tracking-[0.2em]">Bank Account Details:</p>
-                  <div className="space-y-2">
-                    <p className="flex justify-between"><span>Bank Name:</span> <span className="font-black uppercase">{myBusiness.bankName}</span></p>
-                    <p className="flex justify-between"><span>A/c Number:</span> <span className="font-black uppercase tracking-widest">{myBusiness.accountNumber}</span></p>
-                    <p className="flex justify-between"><span>IFSC Code:</span> <span className="font-black uppercase">{myBusiness.ifscCode}</span></p>
-                    <p className="flex justify-between"><span>Branch:</span> <span className="font-bold">{myBusiness.branch}</span></p>
-                  </div>
-                </div>
-                <div className="border-2 border-slate-900 p-6 rounded-[2rem] h-fit bg-white shadow-sm">
-                   <p className="font-black uppercase text-[9px] text-slate-400 mb-4 border-b border-slate-100 pb-2 tracking-[0.2em]">Terms & Conditions:</p>
-                   <ul className="list-decimal list-inside space-y-2 font-bold text-slate-700">
-                      {terms.map((term, i) => term && <li key={i}>{term}</li>)}
-                   </ul>
-                </div>
-              </div>
-              <div className="relative">
-                {docType === "proforma" && (
-                  <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 rotate-45 pointer-events-none opacity-[0.03] select-none">
-                    <span className="text-8xl font-black whitespace-nowrap">PROFORMA INVOICE</span>
-                  </div>
-                )}
-                
-                {docType !== "delivery_challan" ? (
-                  <div className="border-2 border-slate-900 divide-y-2 divide-slate-900 rounded-[2.5rem] overflow-hidden text-[11px] h-fit shadow-xl bg-white relative">
-                    <div className="p-6 flex justify-between items-center">
-                      <span className="font-bold text-slate-500 uppercase tracking-widest text-[9px]">Taxable Amount</span>
-                      <span className="font-black text-lg">{totals.taxableAmount}</span>
-                    </div>
-                    {taxType === "gst" ? (
-                      <>
-                        <div className="p-6 flex justify-between items-center bg-slate-50/50">
-                          <span className="font-bold text-slate-500 uppercase tracking-widest text-[9px]">CGST</span>
-                          <span className="font-black text-lg">{totals.cgst}</span>
-                        </div>
-                        <div className="p-6 flex justify-between items-center">
-                          <span className="font-bold text-slate-500 uppercase tracking-widest text-[9px]">SGST</span>
-                          <span className="font-black text-lg">{totals.sgst}</span>
-                        </div>
-                      </>
-                    ) : (
-                      <div className="p-6 flex justify-between items-center bg-slate-50/50">
-                        <span className="font-bold text-slate-500 uppercase tracking-widest text-[9px]">IGST</span>
-                        <span className="font-black text-lg">{totals.igst}</span>
-                      </div>
-                    )}
-                    <div className="p-8 bg-slate-900 text-white flex justify-between items-center relative overflow-hidden">
-                      <div className="absolute top-0 right-0 w-32 h-32 bg-white/5 rounded-full -mr-16 -mt-16"></div>
-                      <div className="relative z-10">
-                        <div className="text-[10px] uppercase tracking-[0.3em] font-black opacity-50 mb-1">Grand Total</div>
-                        <div className="text-4xl font-black tracking-tighter">{currency} {totals.grandTotal}</div>
-                      </div>
-                    </div>
-                    <div className="p-7 bg-slate-50 border-t-4 border-slate-100">
-                       <span className="font-black text-[9px] uppercase block mb-2 text-slate-400 tracking-[0.2em]">Amount in Words:</span>
-                       <p className="font-black text-slate-800 leading-tight text-[13px] uppercase italic">{numberToWords(totals.grandTotalInt)} Only</p>
-                    </div>
-                  </div>
-                ) : (
-                  <div className="border-2 border-slate-900 p-8 rounded-[2.5rem] bg-slate-50/50 flex flex-col justify-center items-center text-center space-y-4">
-                     <div className="w-16 h-16 bg-slate-200 rounded-full flex items-center justify-center">
-                        <svg className="w-8 h-8 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
-                     </div>
-                     <p className="font-black uppercase text-[10px] tracking-[0.3em] text-slate-400">Values Hidden for Challan</p>
-                     <p className="text-xs font-bold text-slate-500 max-w-[200px]">This document is for transport purposes only and does not contain commercial values.</p>
-                  </div>
-                )}
-              </div>
-            </div>
-
-            {/* Signature Area - STRICT AVOID SPLIT */}
-            <div className="mt-16 grid grid-cols-2 border-2 border-slate-900 h-48 rounded-[2rem] overflow-hidden print:break-inside-avoid shadow-lg bg-white">
-              <div className="p-5 border-r-2 border-slate-900 flex flex-col justify-between bg-white">
-                 <p className="font-black uppercase text-[10px] tracking-widest">
-                    {docType === "delivery_challan" ? "Receiver's Signature:" : "Customer's Acceptance:"}
-                 </p>
-                 <div className="text-right italic text-slate-300 text-[10px] mb-2 border-b border-dashed border-slate-300 pb-2">Seal & Signature</div>
-              </div>
-              <div className="p-5 text-center flex flex-col justify-between items-center bg-white relative">
-                 <p className="font-black uppercase text-[10px] tracking-tight text-slate-800">For {myBusiness.name}</p>
-                 <div className="my-2">
-                    {signImg}
-                 </div>
-                 <div className="w-full flex flex-col items-center">
-                    <div className="w-64 border-t-2 border-slate-900 mb-1"></div>
-                    <p className="font-black uppercase tracking-widest text-[10px]">Authorized Signatory</p>
-                 </div>
-              </div>
-            </div>
-            
-            <p className="text-center mt-8 text-[9px] text-slate-400 font-black uppercase tracking-[0.3em]">Computer Generated Document</p>
-            
-            {/* Custom Footer to replace browser default URL if possible, or just add branding */}
-            <div className="hidden print:flex fixed bottom-4 left-0 right-0 justify-between px-10 text-[8px] font-bold text-slate-400 uppercase tracking-widest pointer-events-none">
-              <span>Created by PAYIVVA TECHNOLOGIES (OPC) PRIVATE LIMITED</span>
-              <span>{customer.name} | {invoiceMeta.invoiceNumber}</span>
-            </div>
-
-            {/* Annexure Section - Optional */}
-            {showAnnexure && (
-              <div className="mt-20 print:break-before-page pt-10">
-                <div className="bg-slate-100 p-6 mb-8 border-2 border-slate-900 rounded-2xl">
-                   <h2 className="text-2xl font-black text-center uppercase tracking-[0.2em]">Annexure - A</h2>
-                </div>
-                
-                <div className="grid grid-cols-2 gap-4 mb-6 text-[11px] font-bold">
-                   <div className="space-y-1">
-                      <div className="bg-slate-50 p-2 border border-slate-200"><span className="text-slate-400 mr-2">CLIENT:</span> {customer.name}</div>
-                      <div className="bg-slate-50 p-2 border border-slate-200"><span className="text-slate-400 mr-2">SITE:</span> {customer.site || "N/A"}</div>
-                   </div>
-                   <div className="space-y-1">
-                      <div className="bg-slate-50 p-2 border border-slate-200"><span className="text-slate-400 mr-2">LOCATION:</span> {invoiceMeta.state}</div>
-                      <div className="bg-slate-50 p-2 border border-slate-200"><span className="text-slate-400 mr-2">DOC NO:</span> {invoiceMeta.invoiceNumber}</div>
-                   </div>
-                </div>
-
-                <table className="w-full border-collapse border-2 border-slate-900 text-[10px]">
-                  <thead>
-                    <tr className="bg-slate-100 font-black uppercase border-b-2 border-slate-900">
-                      <th className="p-3 border-r-2 border-slate-900 w-12">Sr. No</th>
-                      <th className="p-3 border-r-2 border-slate-900 text-left">Item Description</th>
-                      <th className="p-3 border-r-2 border-slate-900 text-center w-32">Make</th>
-                      <th className="p-3 border-r-2 border-slate-900 text-center w-16">Qty</th>
-                      <th className="p-3 border-r-2 border-slate-900 text-right w-24">Unit Price</th>
-                      <th className="p-3 text-right w-28">Price</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-300">
-                    {annexureItems.map((item, i) => (
-                      <tr key={item.id} className="font-bold">
-                        <td className="p-3 border-r-2 border-slate-900 text-center">{i + 1}</td>
-                        <td className="p-3 border-r-2 border-slate-900 uppercase leading-tight">{item.name}</td>
-                        <td className="p-3 border-r-2 border-slate-900 text-center uppercase">{item.make}</td>
-                        <td className="p-3 border-r-2 border-slate-900 text-center">{item.quantity}</td>
-                        <td className="p-3 border-r-2 border-slate-900 text-right">{item.price.toLocaleString(undefined, {minimumFractionDigits: 2})}</td>
-                        <td className="p-3 text-right font-black">{(item.quantity * item.price).toLocaleString(undefined, {minimumFractionDigits: 2})}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                  <tfoot>
-                    <tr className="border-t-2 border-slate-900 font-black bg-slate-50">
-                      <td colSpan="5" className="p-3 border-r-2 border-slate-900 text-right uppercase tracking-widest">Grand Total</td>
-                      <td className="p-3 text-right text-sm">{currency} {annexureTotal}</td>
-                    </tr>
-                  </tfoot>
-                </table>
-                <div className="mt-8 text-[9px] text-slate-400 font-bold italic">
-                   Note: This Annexure is part of {getDocTypeDisplayName()} {invoiceMeta.invoiceNumber} and should be read in conjunction with the same.
-                </div>
-              </div>
-            )}
-          </div>
+          a[Math.floor(n / 100)] +
+          "Hundred " +
+          (n % 100 !== 0 ? inWords(n % 100) : "")
         );
-      default:
-        return <div className="p-20 text-center uppercase opacity-10 font-black">Template Coming Soon</div>;
+      if (n < 100000)
+        return (
+          inWords(Math.floor(n / 1000)) +
+          "Thousand " +
+          (n % 1000 !== 0 ? inWords(n % 1000) : "")
+        );
+      if (n < 10000000)
+        return (
+          inWords(Math.floor(n / 100000)) +
+          "Lakh " +
+          (n % 100000 !== 0 ? inWords(n % 100000) : "")
+        );
+      return "";
+    };
+    return inWords(Math.floor(num)) + "Only";
+  };
+
+  const handleDownloadPDF = () => {
+    setIsPOPrinting(false);
+    setIsAuditPrinting(true); // Temporarily true? No, that's for Audit.
+    // Wait, for Tax Invoice it should be both FALSE.
+    setIsPOPrinting(false);
+    setIsAuditPrinting(false);
+    window.print();
+  };
+
+  const handleDownloadAudit = (data, timeframe) => {
+    setAuditReportData(data);
+    setAuditTimeframe(timeframe);
+    setIsAuditPrinting(true);
+    setIsPOPrinting(false); // Ensure PO mode is off
+    setTimeout(() => {
+      window.print();
+      setIsAuditPrinting(false);
+    }, 500);
+  };
+
+  const handleSubmit = async (e) => {
+    if (e) e.preventDefault();
+    const dataToSave = {
+      invoiceMeta,
+      customer,
+      totals,
+      items,
+      annexures,
+      docType,
+      terms,
+      taxType,
+      currency,
+    };
+    const response = await fetch("/api/invoices", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(dataToSave),
+    });
+    if (response.ok) {
+      alert("Invoice saved successfully!");
+      window.print();
+      resetFormOnly();
+      fetchInvoices();
     }
+  };
+
+  const handlePOPrint = async () => {
+    if (poItems.length === 0) return alert("Add items first!");
+
+    try {
+      // Auto-save new products to inventory
+      for (const item of poItems) {
+        const exists = products.find(
+          (p) => p.name.toUpperCase() === item.name.toUpperCase(),
+        );
+        if (!exists && item.name) {
+          await fetch("/api/products", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              name: item.name,
+              hsn: item.hsn || "",
+              price: item.price || 0,
+              tax_rate: item.taxRate || 18,
+              stock: 0, // Initial stock is 0 until PO is "received"
+              make: item.make || "",
+            }),
+          });
+        }
+      }
+      fetchProducts(); // Refresh product list
+
+      const poData = {
+        po_number: poMeta.poNumber,
+        po_date: poMeta.poDate,
+        vendor_name: poMeta.vendor,
+        items: JSON.stringify(poItems),
+        total_value: poItems.reduce((acc, i) => acc + i.quantity * i.price, 0),
+        status: editingPOId ? undefined : "active", // Don't reset status if editing
+      };
+
+      const url = editingPOId
+        ? `/api/purchase_orders/${editingPOId}`
+        : "/api/purchase_orders";
+      const method = editingPOId ? "PUT" : "POST";
+
+      const res = await fetch(url, {
+        method,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(poData),
+      });
+
+      if (res.ok) {
+        fetchPOs();
+        setIsPOPrinting(true);
+        setTimeout(() => {
+          window.print();
+          setIsPOPrinting(false);
+          setIsPreviewMode(false);
+          setPoItems([]);
+          setEditingPOId(null);
+          alert(
+            editingPOId
+              ? "✅ PO Updated & Print Dialog Opened!"
+              : "✅ PO Saved & Print Dialog Opened!",
+          );
+          setActiveTab("po_history");
+        }, 500);
+      } else {
+        alert("❌ Error saving PO to database.");
+      }
+    } catch (e) {
+      console.error("PO Print Error:", e);
+      alert("❌ System Error.");
+    }
+  };
+
+  const addPOItem = () =>
+    setPoItems([
+      ...poItems,
+      {
+        id: Date.now() + Math.random(),
+        name: "",
+        hsn: "",
+        make: "",
+        quantity: 1,
+        price: 0,
+        taxRate: 18,
+      },
+    ]);
+  const handleMetaChange = (field, value) =>
+    setInvoiceMeta({ ...invoiceMeta, [field]: value });
+  const handleCustomerChange = (field, value) =>
+    setCustomer({ ...customer, [field]: value });
+  const handleBusinessChange = (field, value) =>
+    setMyBusiness({ ...myBusiness, [field]: value });
+  const getDocTypeDisplayName = () => {
+    const names = {
+      invoice: "TAX INVOICE",
+      quotation: "QUOTATION",
+      proforma: "PROFORMA INVOICE",
+      delivery_challan: "DELIVERY CHALLAN",
+      work_order: "WORK ORDER",
+    };
+    return names[docType] || "DOCUMENT";
   };
 
   const renderContent = () => {
-    if (activeTab === "invoices") {
-      if (isPreviewMode) {
+    switch (activeTab) {
+      case "dashboard":
         return (
-          <div className="bg-slate-200/50 p-12 rounded-[3rem] shadow-inner border-4 border-white animate-in zoom-in-95 duration-300">
-            <div className="bg-white px-10 py-6 border-b-4 border-slate-100 flex justify-between items-center rounded-t-[2.5rem]">
-               <div className="flex items-center gap-4">
-                  <div className="w-3 h-3 bg-red-400 rounded-full"></div>
-                  <div className="w-3 h-3 bg-yellow-400 rounded-full"></div>
-                  <div className="w-3 h-3 bg-green-400 rounded-full"></div>
-                  <span className="ml-4 text-[10px] font-black text-slate-400 uppercase tracking-[0.3em]">HIFI PREVIEW (A4 SCALE)</span>
-               </div>
-               <button onClick={() => setIsPreviewMode(false)} className="bg-slate-900 text-white text-[10px] font-black uppercase tracking-widest py-3 px-8 rounded-2xl transition-all shadow-lg shadow-slate-200">Exit Preview</button>
-            </div>
-            <div className="overflow-auto max-h-[80vh] flex justify-center p-4 md:p-8 bg-slate-100/50">
-               <div className="transform scale-[0.5] sm:scale-[0.7] md:scale-[0.75] origin-top bg-white shadow-2xl">
-                  {renderPrintTemplate()}
-               </div>
-            </div>
+          <Dashboard
+            savedInvoices={savedInvoices}
+            currency={currency}
+            setActiveTab={setActiveTab}
+            revenueLogs={revenueLogs}
+          />
+        );
+      case "analytics":
+        return (
+          <Analytics
+            savedInvoices={savedInvoices}
+            savedPOs={savedPOs}
+            expenses={expenses}
+            products={products}
+            currency={currency}
+            handleDownloadAudit={handleDownloadAudit}
+            revenueLogs={revenueLogs}
+          />
+        );
+      case "templates":
+        return (
+          <InvoiceList
+            savedInvoices={savedInvoices}
+            currency={currency}
+            bulkClearHistory={bulkClearHistory}
+            setActiveTab={setActiveTab}
+            updateStatus={updateStatus}
+            loadInvoice={loadInvoice}
+            handleDownloadPDF={handleDownloadPDF}
+            cancelInvoice={cancelInvoice}
+            deleteInvoice={deleteInvoice}
+          />
+        );
+      case "paid_history":
+        return (
+          <PaidHistory
+            savedInvoices={savedInvoices}
+            currency={currency}
+            setActiveTab={setActiveTab}
+            updateStatus={updateStatus}
+            loadInvoice={loadInvoice}
+            handleDownloadPDF={handleDownloadPDF}
+            deleteInvoice={deleteInvoice}
+            permanentDeleteInvoice={permanentDeleteInvoice}
+            revenueLogs={revenueLogs}
+          />
+        );
+      case "cancelled":
+        return (
+          <CancelledInvoices
+            savedInvoices={savedInvoices}
+            currency={currency}
+            fetchInvoices={fetchInvoices}
+          />
+        );
+      case "timeline":
+        return (
+          <Timeline
+            savedInvoices={savedInvoices}
+            currency={currency}
+            updateStatus={updateStatus}
+          />
+        );
+      case "inventory":
+        return (
+          <Inventory
+            inventorySearch={inventorySearch}
+            setInventorySearch={setInventorySearch}
+            inventoryForm={inventoryForm}
+            setInventoryForm={setInventoryForm}
+            saveOrUpdateProduct={saveOrUpdateProduct}
+            editingProductId={editingProductId}
+            cancelEdit={cancelEdit}
+            products={products}
+            currency={currency}
+            startEditProduct={startEditProduct}
+            deleteProduct={deleteProduct}
+            fetchProducts={fetchProducts}
+          />
+        );
+      case "po_history":
+        return (
+          <PurchaseOrderHistory
+            savedPOs={savedPOs}
+            currency={currency}
+            setActiveTab={setActiveTab}
+            reprintPO={reprintPO}
+            loadPO={loadPO}
+            updatePOStatus={updatePOStatus}
+            bulkClearPOHistory={bulkClearPOHistory}
+          />
+        );
+      case "expenses":
+        return (
+          <Expenses
+            expenses={expenses}
+            currency={currency}
+            fetchExpenses={fetchExpenses}
+            bulkClearExpenses={bulkClearExpenses}
+          />
+        );
+      case "daily_archives":
+        return <DailyArchives currency={currency} />;
+      case "recycle_bin":
+        return (
+          <RecycleBin
+            savedInvoices={savedInvoices}
+            savedPOs={savedPOs}
+            expenses={expenses}
+            currency={currency}
+            updateStatus={updateStatus}
+            updatePOStatus={updatePOStatus}
+            permanentDeleteInvoice={permanentDeleteInvoice}
+            fetchInvoices={fetchInvoices}
+            fetchPOs={fetchPOs}
+            fetchExpenses={fetchExpenses}
+          />
+        );
+      case "purchase_orders":
+        return (
+          <PurchaseOrderForm
+            isPreviewMode={isPreviewMode}
+            setIsPreviewMode={setIsPreviewMode}
+            setIsPOPrinting={setIsPOPrinting}
+            editingPOId={editingPOId}
+            poMeta={poMeta}
+            setPoMeta={setPoMeta}
+            poItems={poItems}
+            setPoItems={setPoItems}
+            products={products}
+            currency={currency}
+            activePOSearchId={activePOSearchId}
+            setActivePOSearchId={setActivePOSearchId}
+            addPOItem={addPOItem}
+            handlePOPrint={handlePOPrint}
+            renderPOPrintTemplate={() => (
+              <POTemplate
+                myBusiness={myBusiness}
+                poMeta={poMeta}
+                poItems={poItems}
+                currency={currency}
+              />
+            )}
+          />
+        );
+      case "invoices":
+        return (
+          <InvoiceForm
+            isPreviewMode={isPreviewMode}
+            setIsPreviewMode={setIsPreviewMode}
+            handleSubmit={handleSubmit}
+            docType={docType}
+            setDocType={setDocType}
+            invoiceMeta={invoiceMeta}
+            handleMetaChange={handleMetaChange}
+            myBusiness={myBusiness}
+            handleBusinessChange={handleBusinessChange}
+            customer={customer}
+            handleCustomerChange={handleCustomerChange}
+            clients={clients}
+            selectClient={selectClient}
+            saveClientToDB={saveClientToDB}
+            deleteClient={deleteClient}
+            items={items}
+            addItem={addItem}
+            removeItem={removeItem}
+            handleItemChange={handleItemChange}
+            products={products}
+            selectProduct={selectProduct}
+            fetchProducts={fetchProducts}
+            showAnnexure={showAnnexure}
+            setShowAnnexure={setShowAnnexure}
+            annexures={annexures}
+            handleAnnexureTitleChange={handleAnnexureTitleChange}
+            syncAnnexureToMain={syncAnnexureToMain}
+            removeAnnexureSection={removeAnnexureSection}
+            handleAnnexureItemChange={handleAnnexureItemChange}
+            selectAnnexureProduct={selectAnnexureProduct}
+            removeAnnexureItem={removeAnnexureItem}
+            addAnnexureItem={addAnnexureItem}
+            addAnnexureSection={addAnnexureSection}
+            terms={terms}
+            setTerms={setTerms}
+            taxType={taxType}
+            setTaxType={setTaxType}
+            totals={totals}
+            currency={currency}
+            renderPrintTemplate={() => (
+              <TaxInvoiceTemplate
+                myBusiness={myBusiness}
+                customer={customer}
+                invoiceMeta={invoiceMeta}
+                docType={docType}
+                getDocTypeDisplayName={getDocTypeDisplayName}
+                items={items}
+                totals={totals}
+                taxType={taxType}
+                currency={currency}
+                numberToWords={numberToWords}
+                terms={terms}
+                showAnnexure={showAnnexure}
+                annexures={annexures}
+              />
+            )}
+          />
+        );
+      default:
+        return (
+          <div className="p-20 text-center uppercase opacity-10 font-black">
+            Coming Soon
           </div>
         );
-      }
-      return (
-        <form onSubmit={handleSubmit} className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500 pb-20">
-          <div className="bg-white p-8 rounded-[2.5rem] border-4 border-slate-50 shadow-xl flex flex-wrap gap-4 items-center justify-between">
-            <div className="flex flex-col gap-1">
-              <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-[0.3em]">Document Category</h3>
-              <p className="text-xs font-bold text-slate-600 italic">Select the type of document you want to generate</p>
-            </div>
-            <div className="flex bg-slate-100 p-2 rounded-2xl gap-2">
-              {[
-                { id: "invoice", label: "Tax Invoice" },
-                { id: "quotation", label: "Quotation" },
-                { id: "proforma", label: "Proforma" },
-                { id: "delivery_challan", label: "Challan" }
-              ].map(type => (
-                <button
-                  key={type.id}
-                  type="button"
-                  onClick={() => setDocType(type.id)}
-                  className={`px-6 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${docType === type.id ? "bg-slate-900 text-white shadow-lg scale-105" : "text-slate-400 hover:text-slate-600"}`}
-                >
-                  {type.label}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 md:gap-6">
-            <div className="bg-white p-5 md:p-6 rounded-3xl shadow-sm border border-slate-100 space-y-1">
-              <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Invoice #</label>
-              <input type="text" className="w-full text-sm font-black text-slate-800 outline-none" value={invoiceMeta.invoiceNumber} onChange={(e) => handleMetaChange("invoiceNumber", e.target.value)} />
-            </div>
-            <div className="bg-white p-5 md:p-6 rounded-3xl shadow-sm border border-slate-100 space-y-1">
-              <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Date</label>
-              <input type="date" className="w-full text-sm font-black text-slate-800 outline-none" value={invoiceMeta.issueDate} onChange={(e) => handleMetaChange("issueDate", e.target.value)} />
-            </div>
-            <div className="bg-white p-5 md:p-6 rounded-3xl shadow-sm border border-slate-100 space-y-1">
-              <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">PO #</label>
-              <input type="text" className="w-full text-sm font-black text-slate-800 outline-none" value={invoiceMeta.poNumber} onChange={(e) => handleMetaChange("poNumber", e.target.value)} />
-            </div>
-            <div className="bg-white p-5 md:p-6 rounded-3xl shadow-sm border border-slate-100 space-y-1">
-              <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Vehicle #</label>
-              <input type="text" className="w-full text-sm font-black text-slate-800 outline-none" value={invoiceMeta.vehicleNumber} onChange={(e) => handleMetaChange("vehicleNumber", e.target.value)} />
-            </div>
-            {docType === "delivery_challan" && (
-              <div className="bg-white p-6 rounded-3xl shadow-sm border border-slate-100 space-y-1">
-                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">LR / Dispatch #</label>
-                <input type="text" className="w-full text-sm font-black text-slate-800 outline-none" value={invoiceMeta.lrNumber} onChange={(e) => handleMetaChange("lrNumber", e.target.value)} />
-              </div>
-            )}
-            {docType === "quotation" && (
-              <div className="bg-white p-6 rounded-3xl shadow-sm border border-slate-100 space-y-1">
-                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Price Validity</label>
-                <input type="text" className="w-full text-sm font-black text-slate-800 outline-none" value={invoiceMeta.validity} onChange={(e) => handleMetaChange("validity", e.target.value)} />
-              </div>
-            )}
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-            <div className="bg-white rounded-3xl shadow-sm border border-slate-200 overflow-hidden">
-              <div className="bg-slate-50 px-8 py-5 border-b border-slate-200"><h3 className="font-black text-slate-800 uppercase text-[10px] tracking-widest">Seller (From)</h3></div>
-              <div className="p-8 space-y-5">
-                <div className="flex items-center gap-5">
-                   <img src={myBusiness.logo} alt="Logo" className="h-14 w-14 object-contain bg-slate-50 p-2 rounded-2xl border" />
-                   <input type="text" className="flex-1 font-black text-md text-slate-800 outline-none uppercase" value={myBusiness.name} onChange={(e) => handleBusinessChange("name", e.target.value)} />
-                </div>
-                <textarea className="w-full text-xs text-slate-500 bg-slate-50 rounded-2xl p-4 border-none outline-none resize-none font-medium mb-4" rows="3" value={myBusiness.address} onChange={(e) => handleBusinessChange("address", e.target.value)} />
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-1">
-                    <label className="text-[8px] font-black text-slate-400 uppercase tracking-widest">Bank Name</label>
-                    <input type="text" className="w-full text-[10px] font-black text-slate-800 bg-slate-50 p-3 rounded-xl outline-none" value={myBusiness.bankName} onChange={(e) => handleBusinessChange("bankName", e.target.value)} />
-                  </div>
-                  <div className="space-y-1">
-                    <label className="text-[8px] font-black text-slate-400 uppercase tracking-widest">A/c Number</label>
-                    <input type="text" className="w-full text-[10px] font-black text-slate-800 bg-slate-50 p-3 rounded-xl outline-none" value={myBusiness.accountNumber} onChange={(e) => handleBusinessChange("accountNumber", e.target.value)} />
-                  </div>
-                  <div className="space-y-1">
-                    <label className="text-[8px] font-black text-slate-400 uppercase tracking-widest">IFSC Code</label>
-                    <input type="text" className="w-full text-[10px] font-black text-slate-800 bg-slate-50 p-3 rounded-xl outline-none" value={myBusiness.ifscCode} onChange={(e) => handleBusinessChange("ifscCode", e.target.value)} />
-                  </div>
-                  <div className="space-y-1">
-                    <label className="text-[8px] font-black text-slate-400 uppercase tracking-widest">Branch</label>
-                    <input type="text" className="w-full text-[10px] font-black text-slate-800 bg-slate-50 p-3 rounded-xl outline-none" value={myBusiness.branch} onChange={(e) => handleBusinessChange("branch", e.target.value)} />
-                  </div>
-                </div>
-              </div>
-            </div>
-            <div className="bg-white rounded-3xl shadow-sm border border-slate-200 overflow-hidden">
-              <div className="bg-blue-600 px-8 py-5 border-b border-blue-700"><h3 className="font-black text-white uppercase text-[10px] tracking-widest">Buyer (To)</h3></div>
-              <div className="p-8 space-y-5">
-                <input type="text" placeholder="Buyer Name" className="w-full font-black text-md text-slate-800 outline-none uppercase" value={customer.name} onChange={(e) => handleCustomerChange("name", e.target.value)} />
-                <textarea placeholder="Billing Address..." className="w-full text-xs text-slate-500 bg-slate-50 rounded-2xl p-4 border-none outline-none resize-none font-medium" rows="3" value={customer.address} onChange={(e) => handleCustomerChange("address", e.target.value)} />
-                <div className="space-y-1">
-                   <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Consignee | Site Address</label>
-                   <textarea placeholder="Delivery/Site Address (Optional)..." className="w-full text-xs text-slate-500 bg-blue-50/50 rounded-2xl p-4 border-none outline-none resize-none font-medium" rows="3" value={customer.site} onChange={(e) => handleCustomerChange("site", e.target.value)} />
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <div className="bg-white rounded-3xl shadow-sm border border-slate-200 overflow-hidden">
-            <div className="px-8 py-5 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
-               <h3 className="font-black text-slate-800 uppercase text-[10px] tracking-widest">Items & Pricing</h3>
-               <div className="flex items-center gap-3">
-                  <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Include Annexure</span>
-                  <button type="button" onClick={() => setShowAnnexure(!showAnnexure)} className={`w-12 h-6 rounded-full transition-all relative ${showAnnexure ? "bg-blue-600" : "bg-slate-200"}`}>
-                     <div className={`absolute top-1 left-1 w-4 h-4 bg-white rounded-full transition-all ${showAnnexure ? "translate-x-6" : ""}`}></div>
-                  </button>
-               </div>
-            </div>
-            <div className="overflow-x-auto">
-              <table className="w-full text-left">
-                <thead className="bg-slate-50/50 border-b border-slate-100">
-                  <tr className="text-[10px] font-black text-slate-400 uppercase tracking-widest">
-                    <th className="px-8 py-5 w-16 text-center">Sr.</th>
-                    <th className="px-8 py-5">Item Description</th>
-                    <th className="px-8 py-5 w-24 text-center">HSN</th>
-                    <th className="px-8 py-5 w-16 text-center">Qty</th>
-                    <th className="px-8 py-5 w-24 text-center">Tax %</th>
-                    <th className="px-8 py-5 w-32 text-right">Price</th>
-                    <th className="px-8 py-5 w-32 text-right">Total</th>
-                    <th className="px-8 py-5 w-12"></th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100">
-                  {items.map((item, index) => (
-                    <tr key={item.id} className="group hover:bg-blue-50/30 transition-colors">
-                      <td className="px-8 py-5 text-xs font-black text-slate-400 text-center">{index + 1}</td>
-                      <td className="px-8 py-5"><input type="text" className="w-full bg-transparent border-none outline-none text-xs font-black text-slate-800 uppercase" placeholder="Product..." value={item.name} onChange={(e) => handleItemChange(item.id, "name", e.target.value)} /></td>
-                      <td className="px-8 py-5"><input type="text" className="w-full bg-transparent border-none outline-none text-xs text-center font-bold" placeholder="HSN" value={item.hsn} onChange={(e) => handleItemChange(item.id, "hsn", e.target.value)} /></td>
-                      <td className="px-8 py-5"><input type="number" className="w-full bg-transparent border-none text-center outline-none text-xs font-black" value={item.quantity} onChange={(e) => handleItemChange(item.id, "quantity", parseFloat(e.target.value) || 0)} /></td>
-                      <td className="px-8 py-5"><input type="number" className="w-full bg-transparent border-none text-center outline-none text-xs font-bold text-blue-600" value={item.taxRate} onChange={(e) => handleItemChange(item.id, "taxRate", parseFloat(e.target.value) || 0)} /></td>
-                      <td className="px-8 py-5"><input type="number" className="w-full bg-transparent border-none text-right outline-none text-xs font-black" value={item.price} onChange={(e) => handleItemChange(item.id, "price", parseFloat(e.target.value) || 0)} /></td>
-                      <td className="px-8 py-5 text-xs font-black text-slate-900 text-right">{(item.quantity * item.price).toLocaleString()}</td>
-                      <td className="px-8 py-5 text-center"><button type="button" onClick={() => removeItem(item.id)} disabled={items.length === 1} className="text-slate-300 hover:text-red-500 disabled:hidden transition-colors"><svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg></button></td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-            <div className="p-6 border-t border-slate-50 bg-slate-50/30"><button type="button" onClick={addItem} className="flex items-center gap-3 text-[10px] font-black uppercase text-blue-600 hover:text-blue-700 transition-all hover:translate-x-1"><div className="w-6 h-6 bg-blue-600 text-white rounded-lg flex items-center justify-center">+</div>Add Item Row</button></div>
-          </div>
-
-          {showAnnexure && (
-            <div className="bg-white rounded-3xl shadow-sm border border-slate-200 overflow-hidden animate-in slide-in-from-top-4 duration-500">
-               <div className="px-8 py-5 border-b border-slate-100 bg-slate-900 flex justify-between items-center">
-                  <h3 className="font-black text-white uppercase text-[10px] tracking-[0.3em]">Annexure Details (BOQ)</h3>
-                  <span className="text-[10px] font-bold text-slate-400 italic">This list will appear on a separate page</span>
-               </div>
-               <div className="overflow-x-auto">
-                  <table className="w-full text-left">
-                    <thead className="bg-slate-50 border-b border-slate-100">
-                      <tr className="text-[10px] font-black text-slate-400 uppercase tracking-widest">
-                        <th className="px-4 py-5 w-16 text-center">Sr.</th>
-                        <th className="px-4 py-5">Detailed Description</th>
-                        <th className="px-4 py-5 w-32 text-center">Make</th>
-                        <th className="px-4 py-5 w-24 text-center">Qty</th>
-                        <th className="px-4 py-5 w-40 text-right">Unit Price</th>
-                        <th className="px-4 py-5 w-12"></th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-100">
-                      {annexureItems.map((item, i) => (
-                        <tr key={item.id} className="hover:bg-slate-50/50 transition-colors">
-                          <td className="px-4 py-5 text-center text-xs font-black text-slate-300">{i + 1}</td>
-                          <td className="px-4 py-5"><input type="text" className="w-full bg-transparent border-none outline-none text-xs font-black text-slate-800 uppercase" placeholder="Detailed Item..." value={item.name} onChange={(e) => handleAnnexureItemChange(item.id, "name", e.target.value)} /></td>
-                          <td className="px-4 py-5"><input type="text" className="w-full bg-transparent border-none outline-none text-xs text-center font-bold" placeholder="Make" value={item.make} onChange={(e) => handleAnnexureItemChange(item.id, "make", e.target.value)} /></td>
-                          <td className="px-4 py-5"><input type="number" className="w-full bg-transparent border-none text-center outline-none text-xs font-black" value={item.quantity} onChange={(e) => handleAnnexureItemChange(item.id, "quantity", parseFloat(e.target.value) || 0)} /></td>
-                          <td className="px-4 py-5"><input type="number" className="w-full bg-transparent border-none text-right outline-none text-xs font-black" value={item.price} onChange={(e) => handleAnnexureItemChange(item.id, "price", parseFloat(e.target.value) || 0)} /></td>
-                          <td className="px-4 py-5 text-center"><button type="button" onClick={() => removeAnnexureItem(item.id)} disabled={annexureItems.length === 1} className="text-slate-300 hover:text-red-500 disabled:hidden transition-colors"><svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M6 18L18 6M6 6l12 12"/></svg></button></td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-               </div>
-               <div className="p-6 border-t border-slate-50 bg-slate-50/30">
-                  <button type="button" onClick={addAnnexureItem} className="flex items-center gap-3 text-[10px] font-black uppercase text-blue-600 hover:text-blue-700 transition-all hover:translate-x-1">
-                    <div className="w-6 h-6 bg-slate-900 text-white rounded-lg flex items-center justify-center">+</div>
-                    Add Annexure Row
-                  </button>
-               </div>
-            </div>
-          )}
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-            <div className="bg-white rounded-3xl shadow-sm border border-slate-200 overflow-hidden">
-               <div className="bg-slate-50 px-8 py-5 border-b border-slate-200 flex justify-between items-center">
-                  <h3 className="font-black text-slate-800 uppercase text-[10px] tracking-widest">Terms & Conditions</h3>
-                  <button type="button" onClick={() => setTerms([...terms, ""])} className="text-[10px] font-black text-blue-600 hover:text-blue-700">+ Add Term</button>
-               </div>
-               <div className="p-8 space-y-4">
-                  {terms.map((term, i) => (
-                    <div key={i} className="flex gap-4">
-                      <span className="text-xs font-black text-slate-300 mt-2">{i+1}.</span>
-                      <textarea className="flex-1 text-xs text-slate-600 bg-slate-50 rounded-xl p-3 border-none outline-none resize-none font-medium" rows="2" value={term} onChange={(e) => setTerms(terms.map((t, idx) => idx === i ? e.target.value : t))} />
-                      <button type="button" onClick={() => setTerms(terms.filter((_, idx) => idx !== i))} className="text-slate-300 hover:text-red-500"><svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M6 18L18 6M6 6l12 12"/></svg></button>
-                    </div>
-                  ))}
-               </div>
-            </div>
-            
-            <div className="bg-white rounded-3xl shadow-sm border border-slate-200 overflow-hidden">
-               <div className="bg-slate-50 px-8 py-5 border-b border-slate-200"><h3 className="font-black text-slate-800 uppercase text-[10px] tracking-widest">Taxation Mode</h3></div>
-               <div className="p-8 space-y-6">
-                  <div className="flex gap-4">
-                    <button type="button" onClick={() => setTaxType("gst")} className={`flex-1 py-4 px-6 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all ${taxType === "gst" ? "bg-slate-900 text-white shadow-xl" : "bg-slate-50 text-slate-400 hover:bg-slate-100"}`}>CGST + SGST</button>
-                    <button type="button" onClick={() => setTaxType("igst")} className={`flex-1 py-4 px-6 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all ${taxType === "igst" ? "bg-slate-900 text-white shadow-xl" : "bg-slate-50 text-slate-400 hover:bg-slate-100"}`}>IGST (Outer State)</button>
-                  </div>
-                  <div className="bg-blue-50 p-6 rounded-2xl border border-blue-100">
-                    <p className="text-[10px] font-bold text-blue-600 leading-relaxed uppercase tracking-wide italic">
-                      Note: You can edit the tax percentage for each item individually in the table above. The total tax will be calculated based on your selection.
-                    </p>
-                  </div>
-               </div>
-            </div>
-          </div>
-
-          <div className="flex flex-col md:flex-row justify-end items-center gap-6 md:gap-10">
-             <div className="w-full md:w-96 bg-slate-900 p-8 md:p-10 rounded-[2.5rem] text-white flex justify-between items-center shadow-2xl shadow-blue-200">
-                <span className="text-xs font-black uppercase tracking-[0.3em] opacity-50 italic">Grand Total</span>
-                <span className="text-3xl font-black">{currency} {totals.grandTotal}</span>
-             </div>
-             <button type="submit" className="w-full md:w-auto bg-blue-600 text-white font-black uppercase tracking-widest py-6 px-12 rounded-[2rem] shadow-2xl shadow-blue-200 hover:scale-105 transition-all active:scale-95">Download PDF</button>
-          </div>
-        </form>
-      );
     }
-    return <div className="p-20 text-center uppercase opacity-10 font-black tracking-widest text-4xl">Coming Soon</div>;
   };
 
   return (
     <div className="flex min-h-screen bg-[#F1F5F9] font-sans text-slate-900">
-      <style dangerouslySetInnerHTML={{ __html: `
+      <style
+        dangerouslySetInnerHTML={{
+          __html: `
         @media print {
-          @page { 
-            size: A4; 
-            margin: 15mm 15mm 20mm 15mm; 
-          }
+          @page { size: A4; margin: 15mm 15mm 20mm 15mm; }
           body { background: white !important; }
-          .print-container { 
-            width: 210mm !important; 
-            padding: 0 !important; 
-            margin: 0 !important; 
-            border: none !important; 
-            box-shadow: none !important; 
-          }
           .no-print { display: none !important; }
+          #print-template { 
+            display: block !important; 
+            position: static !important; 
+            width: 100% !important; 
+            opacity: 1 !important; 
+            visibility: visible !important;
+            z-index: 9999 !important;
+          }
           * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
-          .print-break-inside-avoid { break-inside: avoid !important; page-break-inside: avoid !important; }
-          
-          /* Prevent table header and footer from repeating on every page as per user feedback */
           thead, tfoot { display: table-row-group; }
-          
-          /* Ensure smooth page transitions */
           table { page-break-inside: auto; }
           tr { page-break-inside: avoid; page-break-after: auto; }
         }
-      `}} />
+      `,
+        }}
+      />
 
-      <aside className="w-64 bg-white border-r-2 border-slate-100 flex flex-col fixed inset-y-0 left-0 z-50 no-print">
-        <div className="p-10 flex items-center gap-4">
-          <img src={myBusiness.logo} alt="L" className="w-10 h-10 object-contain" />
-          <span className="font-black text-2xl tracking-tighter text-slate-900 italic">Payivva.</span>
-        </div>
-        <nav className="flex-1 p-8 space-y-4">
-          {["dashboard", "invoices", "templates"].map(id => (
-            <button key={id} onClick={() => { setActiveTab(id); setIsPreviewMode(false); }} className={`w-full flex items-center gap-4 px-6 py-5 rounded-3xl transition-all duration-300 font-black text-[10px] uppercase tracking-[0.2em] ${activeTab === id ? "bg-slate-900 text-white shadow-2xl shadow-slate-300 scale-105" : "text-slate-400 hover:text-slate-600 hover:bg-slate-50"}`}>
-              {id}
-            </button>
-          ))}
-        </nav>
-      </aside>
+      <Sidebar
+        activeTab={activeTab}
+        setActiveTab={setActiveTab}
+        setIsPreviewMode={setIsPreviewMode}
+        logo={myBusiness.logo}
+        businessName="Payivva."
+      />
 
       <main className="flex-1 ml-64 no-print transition-all duration-300">
         <header className="h-24 bg-white/80 backdrop-blur-xl border-b-2 border-slate-100 px-12 flex items-center justify-between sticky top-0 z-40">
-          <h2 className="text-2xl font-black text-slate-900 tracking-tighter capitalize">{activeTab}</h2>
+          <h2 className="text-2xl font-black text-slate-900 tracking-tighter capitalize">
+            {activeTab.replace("_", " ")}
+          </h2>
           <div className="flex items-center gap-4">
             {activeTab === "invoices" && (
-              <button onClick={() => setIsPreviewMode(!isPreviewMode)} className={`px-8 py-4 rounded-2xl text-[10px] font-black uppercase tracking-widest shadow-xl transition-all ${isPreviewMode ? "bg-blue-600 text-white shadow-blue-200" : "bg-white text-slate-600 hover:bg-slate-50"}`}>
-                {isPreviewMode ? "Edit Form" : "Live Preview"}
-              </button>
+              <>
+                <button
+                  onClick={clearForm}
+                  className="bg-white border-2 border-red-100 text-red-500 px-6 py-4 rounded-2xl text-[10px] font-black uppercase tracking-widest hover:bg-red-50 transition-all flex items-center gap-2"
+                >
+                  Clear Screen
+                </button>
+                <button
+                  onClick={() => setIsPreviewMode(!isPreviewMode)}
+                  className={`px-8 py-4 rounded-2xl text-[10px] font-black uppercase tracking-widest shadow-xl transition-all ${isPreviewMode ? "bg-blue-600 text-white shadow-blue-200" : "bg-white text-slate-600 hover:bg-slate-50"}`}
+                >
+                  {isPreviewMode ? "Edit Form" : "Live Preview"}
+                </button>
+              </>
             )}
-            <button onClick={activeTab === "invoices" ? handleSubmit : () => {}} className="bg-slate-900 text-white font-black text-[10px] uppercase tracking-[0.2em] py-4 px-10 rounded-2xl shadow-2xl shadow-slate-300 transition-all hover:scale-105 flex items-center gap-3">
+            <button
+              onClick={handleMasterReset}
+              className="px-6 py-4 rounded-2xl bg-white border-2 border-red-100 text-red-600 hover:bg-red-600 hover:text-white transition-all duration-500 shadow-xl flex items-center gap-3 font-black text-[9px] uppercase tracking-[0.2em]"
+              title="Master System Reset (Clear All Active Records)"
+            >
+              <span className="text-lg">⚡</span>
+              Master System Reset
+            </button>
+
+            <button
+              onClick={handleAnalyticsReset}
+              className="px-6 py-4 rounded-2xl bg-white border-2 border-blue-100 text-blue-600 hover:bg-blue-600 hover:text-white transition-all duration-500 shadow-xl flex items-center gap-3 font-black text-[9px] uppercase tracking-[0.2em]"
+              title="Reset All Analytics & Lifetime Revenue"
+            >
+              <span className="text-lg">📊</span>
+              Analytics Reset
+            </button>
+            <button
+              onClick={() => setActiveTab("recycle_bin")}
+              className={`p-4 rounded-2xl transition-all duration-300 flex items-center justify-center shadow-xl border-2 ${activeTab === "recycle_bin" ? "bg-red-600 border-red-500 text-white" : "bg-white border-slate-100 text-slate-400 hover:text-red-500 hover:bg-red-50"}`}
+              title="Recycle Bin"
+            >
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                width="20"
+                height="20"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2.5"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <path d="M3 6h18"></path>
+                <path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"></path>
+                <path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"></path>
+                <line x1="10" y1="11" x2="10" y2="17"></line>
+                <line x1="14" y1="11" x2="14" y2="17"></line>
+              </svg>
+            </button>
+            <button
+              onClick={activeTab === "invoices" ? handleSubmit : () => {}}
+              className="bg-slate-900 text-white font-black text-[10px] uppercase tracking-[0.2em] py-4 px-10 rounded-2xl shadow-2xl shadow-slate-300 transition-all hover:scale-105"
+            >
               {activeTab === "invoices" ? "Save & Print" : `Add New`}
             </button>
           </div>
@@ -763,9 +1464,75 @@ const InvoiceCreator = () => {
         <div className="p-12 max-w-7xl mx-auto">{renderContent()}</div>
       </main>
 
-      <div className="hidden print:block print-container">
-         {renderPrintTemplate()}
+      <div
+        id="print-template"
+        style={{
+          position: "fixed",
+          left: "0",
+          top: "0",
+          width: "210mm",
+          zIndex: "-1",
+          opacity: "0.01",
+          pointerEvents: "none",
+          background: "white",
+        }}
+      >
+        {isAuditPrinting ? (
+          <AuditTemplate
+            myBusiness={myBusiness}
+            reportData={auditReportData}
+            timeframe={auditTimeframe}
+            currency={currency}
+          />
+        ) : isPOPrinting ? (
+          <POTemplate
+            myBusiness={myBusiness}
+            poMeta={poMeta}
+            poItems={poItems}
+            currency={currency}
+          />
+        ) : (
+          <TaxInvoiceTemplate
+            myBusiness={myBusiness}
+            customer={customer}
+            invoiceMeta={invoiceMeta}
+            docType={docType}
+            getDocTypeDisplayName={getDocTypeDisplayName}
+            items={items}
+            totals={totals}
+            taxType={taxType}
+            currency={currency}
+            numberToWords={numberToWords}
+            terms={terms}
+            showAnnexure={showAnnexure}
+            annexures={annexures}
+          />
+        )}
       </div>
+
+      {isClearingHistory && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-md z-[9999] flex flex-col items-center justify-center animate-in fade-in duration-300">
+          <div className="bg-white p-12 rounded-[3rem] shadow-2xl border-4 border-blue-500 flex flex-col items-center gap-6 max-w-md w-full mx-4">
+            <div className="w-16 h-16 border-8 border-slate-100 border-t-blue-500 rounded-full animate-spin"></div>
+            <div className="text-center">
+              <h3 className="text-2xl font-black text-slate-900 uppercase tracking-tighter">
+                Secure Backup in Progress
+              </h3>
+              <p className="text-blue-600 font-black text-lg mt-2">
+                Processing {clearProgress.current} of {clearProgress.total}
+              </p>
+              <p className="text-slate-400 font-bold text-[10px] uppercase tracking-widest mt-1">
+                Preparing secure ZIP archive...
+              </p>
+              <div className="mt-4 p-4 bg-blue-50 rounded-2xl border border-blue-100 w-full">
+                <p className="text-[10px] font-black text-blue-600 uppercase italic">
+                  Do not close this tab. Your data is being secured.
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
